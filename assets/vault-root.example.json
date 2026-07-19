@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "type": "agent-session-vault",
+  "notes": "The sync script creates vault.json automatically. Set AGENT_SESSION_VAULT_ROOT or pass --vault-root."
+}
