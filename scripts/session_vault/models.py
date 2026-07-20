@@ -7,11 +7,18 @@ from typing import Callable
 
 @dataclass(frozen=True)
 class SessionCollection:
-    """One native transcript collection owned by an adapter."""
+    """One native transcript or session-artifact collection owned by an adapter.
+
+    ``include_patterns`` and ``exclude_patterns`` are evaluated relative to
+    ``root``.  This lets an adapter describe exact vendor layouts without making
+    the shared synchronizer guess which JSON files are real conversations.
+    """
 
     name: str
     root: Path
     suffixes: tuple[str, ...] = (".jsonl", ".json")
+    include_patterns: tuple[str, ...] = ("**/*",)
+    exclude_patterns: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
