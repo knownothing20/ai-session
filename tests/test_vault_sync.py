@@ -56,8 +56,25 @@ class VaultSyncTests(unittest.TestCase):
 
     def test_adapters_are_discovered_independently(self):
         ids = {item["app_id"] for item in list_adapters()}
-        self.assertEqual(ids, {"codex", "claude-code"})
+        self.assertEqual(
+            ids,
+            {
+                "aider",
+                "claude-code",
+                "codex",
+                "gemini-cli",
+                "goose",
+                "hermes-agent",
+                "kimi-cli",
+                "opencode",
+                "qwen-code",
+            },
+        )
         self.assertEqual(build_adapter("claude").app_id, "claude-code")
+        self.assertEqual(build_adapter("gemini").app_id, "gemini-cli")
+        self.assertEqual(build_adapter("qwen").app_id, "qwen-code")
+        self.assertEqual(build_adapter("kimi").app_id, "kimi-cli")
+        self.assertEqual(build_adapter("hermes").app_id, "hermes-agent")
 
     def test_inspect_and_layout(self):
         result = inspect_adapter(self.spec, self.vault, self.machine_id)
