@@ -1,4 +1,4 @@
-# Adapter Contract — v0.2
+# Adapter Contract — v0.3
 
 Each application adapter is one independent Python module under:
 
@@ -16,13 +16,27 @@ An adapter returns an `AdapterSpec` with:
 2. `display_name` — human-readable software name.
 3. `aliases` — accepted CLI aliases.
 4. `source_root` — resolved native storage root.
-5. `collections` — one or more independent transcript collections.
+5. `collections` — transcript or session-artifact collections.
 6. `sqlite_patterns` — vendor SQLite files that require consistent snapshots.
 7. `index_files` — indexes copied atomically.
 8. `excluded_names` — authentication, logs, secrets, caches, and other unsafe files.
-9. `session_id_extractor` — a verified function that extracts the native session/thread ID.
+9. `session_id_extractor` — a verified function that extracts a stable logical ID.
 
-## Minimal adapter example
+A SQLite-only adapter may use an empty `collections` tuple. It must never attempt row-level merge or deletion in the vendor database.
+
+## Session collection fields
+
+Each `SessionCollection` defines:
+
+- `name` — stable vault collection name;
+- `root` — native root used to preserve relative paths;
+- `suffixes` — allowed file suffixes;
+- `include_patterns` — precise glob patterns relative to `root`;
+- `exclude_patterns` — relative glob patterns that must be skipped.
+
+Prefer exact include patterns. Do not recursively copy every `.json` file when the vendor directory also contains credentials, runtime status, logs, worktree state, tool outputs, or caches.
+
+## Minimal transcript adapter
 
 ```python
 from pathlib import Path
@@ -38,7 +52,14 @@ def build(source_root: str | None = None) -> AdapterSpec:
         display_name="Example Agent",
         aliases=("example-agent", "example"),
         source_root=root,
-        collections=(SessionCollection("sessions", root / "sessions"),),
+        collections=(
+            SessionCollection(
+                "sessions",
+                root,
+                suffixes=(".jsonl",),
+                include_patterns=("sessions/**/*.jsonl",),
+            ),
+        ),
         sqlite_patterns=("state*.sqlite",),
         index_files=("index.jsonl",),
         excluded_names=("auth.json", "credentials.json"),
@@ -46,16 +67,50 @@ def build(source_root: str | None = None) -> AdapterSpec:
     )
 ```
 
+## Multi-file native sessions
+
+Some applications store one logical session as multiple files. Do not let these files overwrite one another in the manifest.
+
+The extractor should return a stable artifact identity such as:
+
+```text
+<native_session_id>:<artifact_role>
+```
+
+For example, Kimi uses separate `context.jsonl`, `wire.jsonl`, and `state.json` files. The manifest keeps each artifact independently while preserving the common native session UUID in the generated identity.
+
+## SQLite-only adapter
+
+```python
+@register_adapter("example-db-agent")
+def build(source_root: str | None = None) -> AdapterSpec:
+    root = Path(source_root or Path.home() / ".example-db-agent").expanduser().resolve()
+    return AdapterSpec(
+        app_id="example-db-agent",
+        display_name="Example DB Agent",
+        aliases=("example-db-agent",),
+        source_root=root,
+        collections=(),
+        sqlite_patterns=("sessions.db",),
+        session_id_extractor=extract_jsonl_session_id,
+    )
+```
+
+The extractor is not used when no transcript collections exist; it is retained for a uniform adapter interface.
+
 ## Activation checklist
 
 Before shipping a new adapter:
 
+- use upstream source code or official documentation as evidence;
 - inspect real files produced by the target software;
-- confirm whether active sessions append or rewrite;
-- identify a stable native session ID;
-- identify all database sidecars and whether SQLite Backup API works;
-- exclude authentication and tokens;
-- add tests using realistic sanitized fixtures;
-- run `inspect`, `sync`, repeated `sync`, append/update, conflict, duplicate, and `verify` tests.
+- confirm whether active sessions append, rewrite, or use multiple artifacts;
+- identify a stable native session or artifact ID;
+- identify all SQLite files and verify the online backup API;
+- identify indexes needed for future restore;
+- exclude authentication, tokens, runtime sidecars, logs and caches;
+- test default, environment-variable and explicit source-root resolution;
+- add realistic sanitized fixtures;
+- run `inspect`, first `sync`, repeated `sync`, append/update, conflict, duplicate, SQLite and `verify` tests.
 
-Never guess a vendor's database schema and never insert copied transcripts into a vendor database.
+Never guess a vendor's database schema and never insert copied transcripts into a vendor database. See `common-adapters.md` for evidence and known limitations.
