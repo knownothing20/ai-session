@@ -1,13 +1,13 @@
 ---
 name: agent-session-vault-sync
-description: Inspect, incrementally archive, and verify this AI coding application's native local sessions in a user-selected portable Agent Session Vault. Uses independent application adapters, stable app/machine folders, SQLite online snapshots, duplicate detection, conflict preservation, and non-destructive synchronization. Use when the user asks to back up, migrate, synchronize, inspect, verify, or extend support for Codex, Claude Code, or another coding agent's local session history.
+description: Inspect, incrementally archive, and verify common AI coding applications' native local sessions in a user-selected portable Agent Session Vault. Uses independent evidence-backed adapters, precise file patterns, stable app/machine folders, SQLite online snapshots, duplicate detection, conflict preservation, and non-destructive synchronization. Use when the user asks to back up, migrate, synchronize, inspect, verify, or extend support for coding-agent session history.
 ---
 
 # Agent Session Vault Sync
 
 ## Goal
 
-Archive the current coding agent's native session history to a user-selected internal disk, external disk, or mounted storage without modifying the source application.
+Archive a supported coding application's native session history to a user-selected internal disk, external disk, or mounted storage without modifying the source application.
 
 Use the deterministic helper:
 
@@ -15,35 +15,39 @@ Use the deterministic helper:
 scripts/vault_sync.py
 ```
 
-Do not replace it with improvised copy commands unless the helper cannot run. If it fails, report the exact failure instead of silently falling back.
+Do not replace it with improvised copy commands. If it fails, report the exact failure instead of silently falling back.
 
 ## Architecture
 
-The implementation has two layers:
+1. Independent adapters under `scripts/session_vault/adapters/` define one application's native source root, exact transcript/session-artifact patterns, SQLite files, indexes, exclusions, and stable IDs.
+2. The shared core performs vault initialization, folder creation, incremental synchronization, SHA-256 comparison, SQLite snapshots, conflict preservation, reports, locking, and verification.
 
-1. Independent adapters under `scripts/session_vault/adapters/` identify one application's native source root, transcript collections, SQLite files, indexes, exclusions, and native session IDs.
-2. The shared core performs vault initialization, stable folder creation, incremental synchronization, SHA-256 comparison, SQLite snapshots, conflict preservation, reports, locking, and verification.
-
-New applications must be added as independent adapter modules following `references/adapter-contract.md`. Do not add vendor-specific storage rules to the core synchronizer.
+Never put vendor-specific storage rules in the shared core.
 
 ## Supported applications
 
-Discover current adapters rather than assuming a hard-coded list:
+Discover the live list:
 
 ```bash
 python scripts/vault_sync.py --mode list-apps
 ```
 
-V0.2 includes Codex and Claude Code.
+V0.3 adapters:
+
+- Transcript/session artifacts: `codex`, `claude-code`, `gemini-cli`, `qwen-code`, `kimi-cli`.
+- Shared SQLite snapshot: `opencode`, `goose`, `hermes-agent`.
+- Project rolling history: `aider`.
+
+Read `references/common-adapters.md` before changing an adapter or claiming restore capability. A SQLite snapshot adapter preserves the full vendor database but does not provide row-level per-session copy/delete. Aider preserves rolling project history, not one native file per session.
 
 ## Inputs
 
 Resolve:
 
-- `app_id`: adapter ID or alias.
-- `vault_root`: exact directory selected by the user.
-- `source_root`: optional native source override.
-- `machine_id`: optional stable human-readable machine ID.
+- `app_id`: adapter ID or alias;
+- `vault_root`: exact directory selected by the user;
+- `source_root`: optional native source override;
+- `machine_id`: optional stable human-readable machine ID;
 - `mode`: `inspect`, `layout`, `sync`, `verify`, or `list-apps`.
 
 Machine ID priority:
@@ -52,7 +56,7 @@ Machine ID priority:
 2. `AGENT_VAULT_MACHINE_ID`
 3. deterministic host-derived fallback
 
-Recommend an explicit stable machine ID for removable drives used across reinstalls or host renames.
+Recommend an explicit machine ID for removable drives used across reinstalls or host renames.
 
 ## Folder rules
 
@@ -70,30 +74,27 @@ The user supplies only `<vault-root>`. The tool builds:
                 ├── native/<collection>/...
                 ├── metadata/latest/
                 ├── metadata/history/<timestamp>/
-                ├── conflicts/<session_id>/
+                ├── conflicts/<session_or_artifact_id>/
                 └── reports/
 ```
 
 Rules:
 
-- `app_id` is stable and owned by the adapter.
-- `<collection>` is declared by the adapter.
+- `app_id` and collection names come from the adapter;
 - transcript paths remain relative to the native collection root;
-- SQLite and indexes are isolated per app and per machine;
-- never initialize a non-empty directory that lacks a valid `vault.json`;
-- source deletions never delete archive files.
-
-See `references/vault-layout.md`.
+- SQLite and indexes are isolated per app and machine;
+- never initialize a non-empty directory without a valid `vault.json`;
+- source deletion never deletes an archive copy.
 
 ## Required workflow
 
-### 1. Discover or confirm the adapter
+### 1. Confirm support
 
 ```bash
 python scripts/vault_sync.py --mode list-apps
 ```
 
-If the requested application is unsupported, stop synchronization and prepare a new adapter using the contract. Do not guess paths or database semantics.
+For unsupported applications, stop and prepare an evidence-backed adapter. Do not guess paths or database semantics.
 
 ### 2. Inspect
 
@@ -106,9 +107,17 @@ python scripts/vault_sync.py \
   [--machine-id "<machine_id>"]
 ```
 
-Review source root, collections, transcript count, SQLite files, indexes, exclusions, and the planned machine folder.
+Review:
 
-### 3. Show layout when useful
+- resolved source root;
+- exact transcript/session-artifact count;
+- detected SQLite and indexes;
+- excluded sensitive files;
+- planned app/machine folder.
+
+If expected native files are absent, do not run sync. For Goose, use `goose info` or an explicit `--source-root` when automatic platform discovery finds no database. For Aider, point `--source-root` at the intended repository when not running from it.
+
+### 3. Preview layout
 
 ```bash
 python scripts/vault_sync.py \
@@ -118,13 +127,14 @@ python scripts/vault_sync.py \
   [--machine-id "<machine_id>"]
 ```
 
-### 4. Dry run before first synchronization
+### 4. Dry run
 
 ```bash
 python scripts/vault_sync.py \
   --app <app_id> \
   --mode sync \
   --vault-root "<vault_root>" \
+  [--source-root "<source_root>"] \
   [--machine-id "<machine_id>"] \
   --dry-run
 ```
@@ -136,6 +146,7 @@ python scripts/vault_sync.py \
   --app <app_id> \
   --mode sync \
   --vault-root "<vault_root>" \
+  [--source-root "<source_root>"] \
   [--machine-id "<machine_id>"]
 ```
 
@@ -149,73 +160,70 @@ python scripts/vault_sync.py \
   [--machine-id "<machine_id>"]
 ```
 
-Do not report success unless verification reports `ok: true`.
+Do not report success unless verification returns `ok: true`.
 
-## Duplicate and update rules
+## Transcript and artifact rules
 
-Logical identity:
-
-```text
-app_id + machine_id + native_session_id
-```
-
-Content identity:
+Logical identity is:
 
 ```text
-SHA-256(file bytes)
+app_id + machine_id + native_session_or_artifact_id
 ```
+
+Content identity is SHA-256 of the file bytes.
 
 Apply in order:
 
-1. Same logical identity, unchanged size and timestamp, destination exists: skip without rehashing.
-2. Same logical identity and same hash: skip exact duplicate.
-3. Existing archive is an exact byte prefix of the source: active session grew; atomically update and increment revision.
-4. Same logical identity but divergent bytes: preserve old revision under `conflicts/`, then publish the new current version.
-5. Different logical identities but same hash: retain both native paths and mark duplicate content.
-6. Missing source file: retain the archive copy.
+1. Unchanged size/timestamp and destination exists: skip without rehashing.
+2. Same logical identity and hash: skip exact duplicate.
+3. Existing archive is an exact byte prefix of source: active transcript grew; atomically update and increment revision.
+4. Same logical identity with divergent bytes: preserve old revision under `conflicts/`, then publish new current content.
+5. Different identities with same hash: retain both and mark duplicate content.
+6. Missing source file: retain archive copy.
 
-Do not delete or hard-link duplicate native files automatically because vendor indexes or databases may reference both identities.
+For multi-file sessions, adapters must return distinct stable artifact IDs, such as `<session_id>:context.jsonl` and `<session_id>:state.json`.
+
+Do not automatically delete or hard-link duplicate native files because vendor indexes or databases may reference both identities.
 
 ## SQLite and index rules
 
 - Never merge vendor SQLite databases.
 - Never insert transcript files into a vendor database.
-- Use SQLite online backup API for consistent snapshots.
-- Run `PRAGMA quick_check` before publishing a snapshot.
-- Keep the latest snapshot under `metadata/latest/`.
-- Move the previous published snapshot to `metadata/history/<timestamp>/` before replacement.
-- Copy indexes atomically; never append two vendor indexes together.
-- Treat the vault's `manifest.json` as the archive catalog.
+- Use SQLite online backup API.
+- Run `PRAGMA quick_check` before publishing.
+- Keep the current snapshot in `metadata/latest/`.
+- Preserve the previous snapshot in `metadata/history/<timestamp>/`.
+- Copy indexes atomically; never concatenate vendor indexes.
+- Treat `manifest.json` as the vault catalog.
 
 ## Source safety
 
 Treat source storage as read-only. Never:
 
-- edit or rebuild source SQLite/index files;
+- edit/rebuild source SQLite or indexes;
 - delete native sessions;
-- copy login credentials, API keys, keychain exports, or token files;
-- copy caches, diagnostic logs, worktrees, or project source code by default.
+- copy login credentials, API keys, token files, keychain exports or `.env` files;
+- copy logs, caches, runtime status, worktree sidecars, tool outputs or project source code unless an adapter explicitly proves they are required session artifacts.
 
-## Adding a new adapter
+## Adding or reviewing an adapter
 
-Create one independent module:
+Follow:
 
-```text
-scripts/session_vault/adapters/<app_id>.py
-```
+- `references/adapter-contract.md`
+- `references/common-adapters.md`
 
-Register it with `@register_adapter(...)`, return a complete `AdapterSpec`, and add realistic sanitized tests. The registry discovers modules automatically; do not edit a central adapter switch.
+Use upstream source code or official documentation as evidence. Add realistic sanitized tests for source-root resolution, precise file selection, stable IDs, repeated sync, append, conflict, duplicates, SQLite snapshots and verification.
 
-Before activation, verify real storage locations, active-session write behavior, native ID extraction, SQLite consistency, index relationships, exclusions, repeated sync, append, conflict, duplicate, and verify behavior.
+Proprietary applications without a stable public storage contract must remain deferred until a read-only inventory from a real installation is available.
 
 ## Required result report
 
 After synchronization report:
 
-- adapter/app ID and machine ID;
+- adapter/app and machine ID;
 - source, vault, and exact machine folder;
-- sessions scanned, copied, and skipped;
+- session/artifact files scanned, copied and skipped;
 - duplicate-content and conflict counts;
-- metadata updated, skipped, and failed;
+- metadata updated, skipped and failed;
 - warnings;
 - verification result and report location.
