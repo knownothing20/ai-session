@@ -1,5 +1,6 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "layout_version": 1,
   "type": "agent-session-vault",
-  "notes": "The sync script creates vault.json automatically. Set AGENT_SESSION_VAULT_ROOT or pass --vault-root."
+  "notes": "The tool creates vault.json in an empty user-selected directory. Use --machine-id for a stable human-readable machine folder."
 }
