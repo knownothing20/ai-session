@@ -52,3 +52,19 @@ def extract_jsonl_session_id(path: Path) -> str:
     except OSError:
         pass
     return f"path:{path.as_posix()}"
+
+
+def extract_structured_session_id(path: Path) -> str:
+    """Extract an ID from JSON or JSONL, including pretty-printed legacy JSON."""
+
+    match = UUID_RE.search(path.stem)
+    if match:
+        return match.group(1).lower()
+    if path.suffix.lower() == ".json":
+        try:
+            found = nested_session_id(json.loads(path.read_text(encoding="utf-8")))
+            if found:
+                return found
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            pass
+    return extract_jsonl_session_id(path)
