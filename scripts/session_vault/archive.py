@@ -14,13 +14,26 @@ SCHEMA_VERSION = 2
 LAYOUT_VERSION = 1
 
 
+def _matches_any(path: Path, patterns: tuple[str, ...]) -> bool:
+    return any(path.match(pattern) for pattern in patterns)
+
+
 def iter_session_files(spec: AdapterSpec) -> Iterator[tuple[SessionCollection, Path]]:
     for collection in spec.collections:
         if not collection.root.exists():
             continue
         suffixes = {suffix.lower() for suffix in collection.suffixes}
-        for path in collection.root.rglob("*"):
-            if path.is_file() and path.suffix.lower() in suffixes:
+        seen: set[Path] = set()
+        for pattern in collection.include_patterns:
+            for path in collection.root.glob(pattern):
+                if path in seen or not path.is_file():
+                    continue
+                seen.add(path)
+                if path.suffix.lower() not in suffixes:
+                    continue
+                relative = path.relative_to(collection.root)
+                if _matches_any(relative, collection.exclude_patterns):
+                    continue
                 yield collection, path
 
 
