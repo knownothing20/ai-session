@@ -8,7 +8,7 @@ scripts/session_vault/adapters/<app_id>.py
 
 The registry discovers modules automatically. A new adapter does **not** require editing the core synchronizer or a central `if/elif` switch.
 
-## Adapter fields
+## Required fields
 
 An adapter returns an `AdapterSpec` with:
 
@@ -20,12 +20,10 @@ An adapter returns an `AdapterSpec` with:
 6. `sqlite_patterns` — vendor SQLite files that require consistent snapshots.
 7. `index_files` — indexes copied atomically.
 8. `excluded_names` — authentication, logs, secrets, caches, and other unsafe files.
-9. `session_id_extractor` — verified function that extracts a stable logical ID.
-10. `restore_strategy` — optional tested native recovery strategy. Leave `None` by default.
+9. `session_id_extractor` — a verified function that extracts a stable logical ID.
+10. `restore_strategy` — optional capability identifier for evidence-backed native restore.
 
 A SQLite-only adapter may use an empty `collections` tuple. It must never attempt row-level merge or deletion in the vendor database.
-
-An adapter must not declare `restore_strategy` merely because its files can be copied. Native restore requires separate evidence, safety design, and tests.
 
 ## Session collection fields
 
@@ -67,7 +65,6 @@ def build(source_root: str | None = None) -> AdapterSpec:
         index_files=("index.jsonl",),
         excluded_names=("auth.json", "credentials.json"),
         session_id_extractor=extract_jsonl_session_id,
-        restore_strategy=None,
     )
 ```
 
@@ -97,40 +94,47 @@ def build(source_root: str | None = None) -> AdapterSpec:
         collections=(),
         sqlite_patterns=("sessions.db",),
         session_id_extractor=extract_jsonl_session_id,
-        restore_strategy=None,
     )
 ```
 
 The extractor is not used when no transcript collections exist; it is retained for a uniform adapter interface.
 
-## Native restore contract
+## Native restore capability
 
-A restore-capable adapter must define and test:
+Restore is disabled unless an adapter explicitly declares a verified strategy:
 
-- whether restore is per-session, full-library, or both;
-- whether old SQLite can safely be activated or must be rebuilt;
-- mapping from vault collections back to native paths;
-- handling for archived sessions;
-- index reconstruction or filtering;
-- authentication exclusions;
-- isolated target-root rules;
-- staging and atomic publication;
-- archive hash verification and restored-file verification;
-- recovery launch instructions and result report.
-
-Restore must be disabled unless all required semantics are known. Never infer database merge or rebuild behavior from file names alone.
-
-The current Codex strategy is:
-
-```text
-codex-rollout-backfill
+```python
+restore_strategy="vendor-specific-strategy-id"
 ```
 
-It restores rollout JSONL and relevant indexes into a new isolated `CODEX_HOME`, skips old state SQLite, and lets Codex rebuild a fresh database from rollouts. See `codex-restore.md`.
+A restore strategy must define and test:
+
+- exact archive artifacts required;
+- whether vendor SQLite can be restored safely or must be rebuilt;
+- whether archived sessions need activation for resume;
+- destination isolation rules;
+- path traversal prevention;
+- archive hash verification;
+- staging and atomic publication;
+- generated launch instructions;
+- credentials and runtime state that must remain excluded.
+
+Never infer restore support merely because transcript files were archived. See `references/codex-restore.md` for the Codex rollout-backfill implementation.
+
+## Development validation
+
+During active development, validation is manual unless the user explicitly requests GitHub Actions:
+
+```bash
+python -m compileall -q scripts tests
+python -m unittest discover -s tests -v
+```
+
+Do not add workflow triggers by default. Record manual commands and results in the PR or development report.
 
 ## Activation checklist
 
-Before shipping a new archive adapter:
+Before shipping a new adapter:
 
 - use upstream source code or official documentation as evidence;
 - inspect real files produced by the target software;
@@ -138,20 +142,10 @@ Before shipping a new archive adapter:
 - identify a stable native session or artifact ID;
 - identify all SQLite files and verify the online backup API;
 - identify indexes needed for future restore;
-- exclude authentication, tokens, runtime sidecars, logs, and caches;
-- test default, environment-variable, and explicit source-root resolution;
+- exclude authentication, tokens, runtime sidecars, logs and caches;
+- test default, environment-variable and explicit source-root resolution;
 - add realistic sanitized fixtures;
-- run `inspect`, first `sync`, repeated `sync`, append/update, conflict, duplicate, SQLite, and `verify` tests.
+- run `inspect`, first `sync`, repeated `sync`, append/update, conflict, duplicate, SQLite and `verify` tests;
+- when declaring restore, add single/full restore, hash tamper, unsafe path, existing destination, dry-run, launcher and report tests.
 
-Before declaring restore support, additionally test:
-
-- missing and tampered archive files;
-- existing and unsafe target paths;
-- dry run;
-- single and full scope where supported;
-- archived-session behavior;
-- generated launchers;
-- recovery report fields;
-- no modification of source or vault.
-
-Never guess a vendor database schema and never insert copied transcripts into a vendor database. See `common-adapters.md` for evidence and known limitations.
+Never guess a vendor's database schema and never insert copied transcripts into a vendor database. See `common-adapters.md` for evidence and known limitations.
