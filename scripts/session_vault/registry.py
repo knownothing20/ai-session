@@ -79,6 +79,7 @@ def list_adapters() -> list[dict[str, object]]:
                 "display_name": spec.display_name,
                 "aliases": sorted(set(spec.aliases)),
                 "default_source_root": str(Path(spec.source_root)),
+                "restore_strategy": spec.restore_strategy,
             }
         )
     return result
