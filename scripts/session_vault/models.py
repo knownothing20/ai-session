@@ -10,7 +10,7 @@ class SessionCollection:
     """One native transcript or session-artifact collection owned by an adapter.
 
     ``include_patterns`` and ``exclude_patterns`` are evaluated relative to
-    ``root``.  This lets an adapter describe exact vendor layouts without making
+    ``root``. This lets an adapter describe exact vendor layouts without making
     the shared synchronizer guess which JSON files are real conversations.
     """
 
@@ -34,3 +34,4 @@ class AdapterSpec:
     index_files: tuple[str, ...] = ()
     excluded_names: tuple[str, ...] = ()
     session_id_extractor: Callable[[Path], str] | None = field(default=None, compare=False)
+    restore_strategy: str | None = None
