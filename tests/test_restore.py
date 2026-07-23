@@ -106,6 +106,7 @@ class CodexRestoreTests(unittest.TestCase):
             "session",
             self.session_ids[0],
         )
+        self.assertTrue(report["published"])
         self.assertEqual(report["sessions_restored"], 1)
         self.assertEqual(len(list((self.restore_root / "sessions").rglob("*.jsonl"))), 1)
         self.assertFalse((self.restore_root / "state_5.sqlite").exists())
@@ -119,6 +120,14 @@ class CodexRestoreTests(unittest.TestCase):
         )
         self.assertIn(str(self.restore_root), launcher)
         self.assertNotIn(".restore-", launcher)
+        saved_report = json.loads(
+            (self.restore_root / "restore-report.json").read_text(encoding="utf-8")
+        )
+        self.assertTrue(saved_report["published"])
+        self.assertEqual(
+            saved_report["report_path"],
+            str(self.restore_root / "restore-report.json"),
+        )
 
     def test_full_restore_copies_all_sessions_and_indexes_but_not_database(self):
         report = restore_archive(
