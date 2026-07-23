@@ -16,7 +16,7 @@ It separates three responsibilities:
 - Added SQLite-only adapters for applications that store all messages in one shared database.
 - Added upstream-source research and explicit support boundaries in `references/common-adapters.md`.
 - Added isolated Codex single-session and full-library restore without overwriting the active `.codex` directory.
-- Added GitHub Actions tests on Python 3.10 and 3.12.
+- Added local/manual test coverage for Python 3.10 and 3.12; development does not automatically trigger GitHub Actions.
 
 ## Supported adapters
 
@@ -186,9 +186,11 @@ Use `@register_adapter(...)` and return an `AdapterSpec`. The registry imports n
 
 ## Tests
 
+Run tests manually during development:
+
 ```bash
 python -m compileall -q scripts tests
 python -m unittest discover -s tests -v
 ```
 
-The tool never modifies source application files and excludes authentication files by default.
+No GitHub Actions workflow is installed on the development branch. The tool never modifies source application files and excludes authentication files by default.
