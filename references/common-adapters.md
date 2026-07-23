@@ -7,22 +7,29 @@ This document records the evidence and support boundary for each adapter. Paths 
 - **Transcript files**: one session, or a stable set of files belonging to one session, can be incrementally copied and deduplicated.
 - **SQLite snapshot**: full session data is stored in a shared database. The vault saves a consistent database snapshot; it does not merge or delete individual sessions inside the vendor database.
 - **Project history**: the application writes one rolling history file per project rather than one file per session.
+- **Native restore**: an adapter has a separately tested strategy for constructing a usable isolated application home. Archive support alone does not imply restore support.
 
 ## Implemented adapters
 
 | App ID | Application | Storage type | Native storage | Stable identity | Important exclusions / boundary |
 |---|---|---|---|---|---|
-| `codex` | OpenAI Codex | Transcript files + SQLite/index | `CODEX_HOME` or `~/.codex`; `sessions/**/*.jsonl`, `archived_sessions/**/*.jsonl`, `state_*.sqlite`, `session_index.jsonl` | Native session UUID from rollout metadata or filename | Excludes `auth.json` and diagnostic log DBs |
-| `claude-code` | Claude Code | Transcript files | `~/.claude/projects/**/*.jsonl` | Native session ID from transcript | Credentials and configuration are not included |
-| `gemini-cli` | Google Gemini CLI | Transcript files + project index | `~/.gemini/tmp/<project>/chats/session-*.json[l]`; `~/.gemini/projects.json` | Full `sessionId` from the first metadata record | Excludes OAuth, MCP OAuth, A2A OAuth and account files |
-| `qwen-code` | Qwen Code | Transcript files | `QWEN_RUNTIME_DIR` / `QWEN_HOME` / `~/.qwen`; `projects/*/chats/*.jsonl` and archived chat files; legacy `tmp/*/chats` | Session UUID plus active/archive state | Runtime and worktree sidecar JSON files are intentionally not treated as transcripts |
-| `kimi-cli` | Kimi Code CLI | Multi-file session artifacts + index | `KIMI_SHARE_DIR` or `~/.kimi`; `sessions/<workdir>/<session>/context.jsonl`, `wire.jsonl`, `state.json`; legacy JSONL; `kimi.json` | Session directory UUID plus artifact path | Context, wire events and state are preserved as separate artifacts of the same native session |
-| `opencode` | OpenCode | SQLite snapshot | XDG data directory `opencode/opencode.db`, channel DB, or `OPENCODE_DB` | Database-level snapshot | No per-session deletion or merge in the vault |
-| `goose` | Goose | SQLite snapshot | Goose data dir `sessions/sessions.db`; `GOOSE_PATH_ROOT/data` when overridden | Database-level snapshot | Default platform path is existence-detected; use `goose info` or `--source-root` when not found |
-| `hermes-agent` | Hermes Agent | SQLite snapshot with FTS | `HERMES_HOME/state.db` or `~/.hermes/state.db` | Database-level snapshot | The DB contains full messages and search indexes; credential files are not copied |
-| `aider` | Aider | Project rolling history | Project root `.aider.chat.history.md`, `.aider.input.history`, optional `.aider.llm.history` | History filename | This is not one-file-per-session. Custom CLI history paths require `--source-root` and currently are not auto-discovered |
+| `codex` | OpenAI Codex | Transcript files + SQLite/index + isolated restore | `CODEX_HOME` or `~/.codex`; `sessions/**/*.jsonl`, `archived_sessions/**/*.jsonl`, `state_*.sqlite`, `session_index.jsonl` | Native session UUID from rollout metadata or filename | Excludes `auth.json` and diagnostic log DBs. Restore publishes rollouts/indexes into a new `CODEX_HOME`, skips old state SQLite, and lets Codex backfill a fresh DB |
+| `claude-code` | Claude Code | Transcript files | `~/.claude/projects/**/*.jsonl` | Native session ID from transcript | Credentials and configuration are not included; native restore is not declared |
+| `gemini-cli` | Google Gemini CLI | Transcript files + project index | `~/.gemini/tmp/<project>/chats/session-*.json[l]`; `~/.gemini/projects.json` | Full `sessionId` from the first metadata record | Excludes OAuth, MCP OAuth, A2A OAuth and account files; native restore is not declared |
+| `qwen-code` | Qwen Code | Transcript files | `QWEN_RUNTIME_DIR` / `QWEN_HOME` / `~/.qwen`; `projects/*/chats/*.jsonl` and archived chat files; legacy `tmp/*/chats` | Session UUID plus active/archive state | Runtime and worktree sidecar JSON files are intentionally not treated as transcripts; native restore is not declared |
+| `kimi-cli` | Kimi Code CLI | Multi-file session artifacts + index | `KIMI_SHARE_DIR` or `~/.kimi`; `sessions/<workdir>/<session>/context.jsonl`, `wire.jsonl`, `state.json`; legacy JSONL; `kimi.json` | Session directory UUID plus artifact path | Context, wire events and state are preserved as separate artifacts; native restore is not declared |
+| `opencode` | OpenCode | SQLite snapshot | XDG data directory `opencode/opencode.db`, channel DB, or `OPENCODE_DB` | Database-level snapshot | No per-session deletion, merge or native restore in the vault |
+| `goose` | Goose | SQLite snapshot | Goose data dir `sessions/sessions.db`; `GOOSE_PATH_ROOT/data` when overridden | Database-level snapshot | Default platform path is existence-detected; use `goose info` or `--source-root` when not found; native restore is not declared |
+| `hermes-agent` | Hermes Agent | SQLite snapshot with FTS | `HERMES_HOME/state.db` or `~/.hermes/state.db` | Database-level snapshot | The DB contains full messages and search indexes; credential files are not copied; native restore is not declared |
+| `aider` | Aider | Project rolling history | Project root `.aider.chat.history.md`, `.aider.input.history`, optional `.aider.llm.history` | History filename | This is not one-file-per-session. Custom CLI history paths require `--source-root`; native restore is not declared |
 
 ## Upstream evidence
+
+### Codex
+
+- Rollout-to-state backfill and active/archive scanning: <https://github.com/openai/codex/blob/44d76c6a6dd04fa2efc302b906ac8774267a1272/codex-rs/rollout/src/state_db_tests.rs>
+- Doctor recommendation to rebuild a missing state DB from rollout files: <https://github.com/openai/codex/blob/44d76c6a6dd04fa2efc302b906ac8774267a1272/codex-rs/cli/src/doctor/thread_inventory.rs>
+- Resume by thread ID: <https://github.com/openai/codex/blob/44d76c6a6dd04fa2efc302b906ac8774267a1272/codex-rs/utils/cli/src/resume_command.rs>
 
 ### Gemini CLI
 
@@ -71,4 +78,4 @@ The following are deliberately not implemented yet:
 - Cline, Roo Code and Continue: open source, but storage is tied to VS Code-compatible extension hosts, profiles, remote SSH/WSL contexts and editor-specific global storage roots. They need a host-aware discovery layer rather than one hard-coded path.
 - OpenClaw: the name currently refers to multiple projects and distributions. An adapter needs the exact repository/build and a sample storage inventory before activation.
 
-For a deferred application, run a read-only inventory and add an adapter only after confirming its native session ID, transcript files or DB, indexes, and credential exclusions.
+For a deferred application, run a read-only inventory and add an adapter only after confirming its native session ID, transcript files or DB, indexes, credential exclusions, and any proposed restore semantics.
