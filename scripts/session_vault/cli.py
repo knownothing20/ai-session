@@ -10,6 +10,7 @@ from .core import (
     derive_machine_id,
     describe_layout,
     inspect_adapter,
+    restore_archive,
     sync_archive,
     vault_machine_root,
     verify_archive,
@@ -19,15 +20,23 @@ from .registry import build_adapter, list_adapters
 
 def parser() -> argparse.ArgumentParser:
     command = argparse.ArgumentParser(
-        description="Incrementally archive local AI coding-agent sessions"
+        description="Incrementally archive and restore local AI coding-agent sessions"
     )
     command.add_argument("--app", help="Adapter id or alias, for example codex")
     command.add_argument("--vault-root", help="Portable vault root directory")
     command.add_argument("--source-root", help="Override the adapter source root")
     command.add_argument("--machine-id", help="Stable machine folder id")
+    command.add_argument("--restore-root", help="New isolated native restore directory")
+    command.add_argument(
+        "--restore-scope",
+        choices=("session", "full"),
+        default="session",
+        help="Restore one session or the complete archived session set",
+    )
+    command.add_argument("--session-id", help="Native session ID for session restore")
     command.add_argument(
         "--mode",
-        choices=("inspect", "sync", "verify", "layout", "list-apps"),
+        choices=("inspect", "sync", "verify", "layout", "restore", "list-apps"),
         default="inspect",
     )
     command.add_argument("--dry-run", action="store_true")
@@ -59,6 +68,20 @@ def main(argv: list[str] | None = None) -> int:
                 if vault_root is None:
                     raise SyncError("--vault-root is required for sync")
                 result = sync_archive(spec, vault_root, machine_id, options.dry_run)
+            elif options.mode == "restore":
+                if vault_root is None:
+                    raise SyncError("--vault-root is required for restore")
+                if not options.restore_root:
+                    raise SyncError("--restore-root is required for restore")
+                machine_root = vault_machine_root(vault_root, spec.app_id, machine_id)
+                result = restore_archive(
+                    spec,
+                    machine_root,
+                    Path(options.restore_root).expanduser().resolve(),
+                    options.restore_scope,
+                    options.session_id,
+                    options.dry_run,
+                )
             else:
                 if vault_root is None:
                     raise SyncError("--vault-root is required for verify")
