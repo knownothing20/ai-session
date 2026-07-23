@@ -47,7 +47,9 @@ def _verified_source(machine_root: Path, relative: str, expected_hash: str, labe
     return source
 
 
-def _session_destination(stage_root: Path, item: dict) -> Path:
+def _session_destination(
+    stage_root: Path, item: dict, activate_archived: bool = False
+) -> Path:
     collection = item.get("source_collection")
     if collection not in _ALLOWED_CODEX_COLLECTIONS:
         raise SyncError(f"Unsupported Codex restore collection: {collection!r}")
@@ -61,7 +63,10 @@ def _session_destination(stage_root: Path, item: dict) -> Path:
         ) from exc
     if ".." in native_relative.parts:
         raise SyncError(f"Unsafe native session path: {native_relative}")
-    return stage_root / collection / native_relative
+    destination_collection = (
+        "sessions" if activate_archived and collection == "archived_sessions" else collection
+    )
+    return stage_root / destination_collection / native_relative
 
 
 def _atomic_write_text(path: Path, text: str, executable: bool = False) -> None:
@@ -162,6 +167,8 @@ def _select_sessions(
 ) -> list[dict]:
     values = list(manifest.get("sessions", {}).values())
     if scope == "full":
+        if not values:
+            raise SyncError("No sessions are available in the archive manifest")
         return values
     if scope != "session":
         raise SyncError(f"Unsupported restore scope: {scope}")
@@ -175,6 +182,17 @@ def _select_sessions(
     if not selected:
         raise SyncError(f"Session not found in archive manifest: {session_id}")
     return selected
+
+
+def _metadata_kind(name: str, item: dict) -> str:
+    kind = item.get("kind")
+    if kind in {"sqlite", "index"}:
+        return kind
+    return (
+        "sqlite"
+        if Path(name).suffix.lower() in {".sqlite", ".sqlite3", ".db"}
+        else "index"
+    )
 
 
 def restore_archive(
@@ -227,6 +245,12 @@ def restore_archive(
         "sessions_restored": 0,
         "indexes_restored": [],
         "sqlite_snapshots_skipped": 0,
+        "activated_archived_sessions": sum(
+            1
+            for item in selected
+            if scope == "session"
+            and item.get("source_collection") == "archived_sessions"
+        ),
         "restore_strategy": CODEX_RESTORE_STRATEGY,
         "database_rebuild_required": True,
         "warnings": [],
@@ -244,7 +268,9 @@ def restore_archive(
 
     metadata = manifest.get("metadata", {})
     report["sqlite_snapshots_skipped"] = sum(
-        1 for item in metadata.values() if item.get("kind") == "sqlite"
+        1
+        for name, item in metadata.items()
+        if _metadata_kind(name, item) == "sqlite"
     )
     if dry_run:
         report["completed_at"] = utc_now()
@@ -263,14 +289,16 @@ def restore_archive(
     stage_root.mkdir(parents=True)
     try:
         for source, item in verified_sessions:
-            destination = _session_destination(stage_root, item)
+            destination = _session_destination(
+                stage_root, item, activate_archived=(scope == "session")
+            )
             atomic_copy(source, destination)
             if hash_file(destination) != item.get("sha256"):
                 raise SyncError(f"Restored session hash mismatch: {destination}")
             report["sessions_restored"] += 1
 
         for name, item in metadata.items():
-            if item.get("kind") != "index":
+            if _metadata_kind(name, item) != "index":
                 continue
             restored_name: str | None
             if scope == "session":
