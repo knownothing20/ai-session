@@ -27,4 +27,5 @@ def build(source_root: str | None = None) -> AdapterSpec:
         index_files=("session_index.jsonl", "external_agent_session_imports.json"),
         excluded_names=("auth.json", "logs_2.sqlite"),
         session_id_extractor=extract_jsonl_session_id,
+        restore_strategy="codex-rollout-backfill",
     )
