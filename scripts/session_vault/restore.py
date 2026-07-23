@@ -327,6 +327,8 @@ def restore_archive(
             "No vendor SQLite database was restored. On first launch Codex should "
             "create a fresh state database and backfill it from rollout files."
         )
+        report["published"] = True
+        report["report_path"] = str(restore_root / "restore-report.json")
         atomic_write_json(stage_root / RESTORE_MARKER, report)
         atomic_write_json(stage_root / "restore-report.json", report)
         _atomic_write_text(
@@ -341,6 +343,4 @@ def restore_archive(
     except Exception:
         shutil.rmtree(stage_root, ignore_errors=True)
         raise
-    report["published"] = True
-    report["report_path"] = str(restore_root / "restore-report.json")
     return report
