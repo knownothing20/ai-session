@@ -5,11 +5,12 @@ import sys
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, TextIO
+from typing import Any, Callable, TextIO
 
 PROTOCOL_NAME = "ai-session-vault-sidecar"
 PROTOCOL_VERSION = 1
 SUPPORTED_EVENT_TYPES = frozenset({"started", "progress", "completed", "failed"})
+ProgressCallback = Callable[[dict[str, Any]], None]
 
 
 def _utc_now() -> str:
@@ -31,6 +32,35 @@ def make_error(
     if details:
         error["details"] = details
     return error
+
+
+def make_progress(
+    stage: str,
+    message: str,
+    *,
+    current: int | None = None,
+    total: int | None = None,
+    details: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if not stage.strip():
+        raise ValueError("Progress stage must not be empty")
+    if not message.strip():
+        raise ValueError("Progress message must not be empty")
+    if current is not None and current < 0:
+        raise ValueError("Progress current must be non-negative")
+    if total is not None and total < 0:
+        raise ValueError("Progress total must be non-negative")
+    if current is not None and total is not None and current > total:
+        raise ValueError("Progress current must not exceed total")
+
+    payload: dict[str, Any] = {"stage": stage, "message": message}
+    if current is not None:
+        payload["current"] = current
+    if total is not None:
+        payload["total"] = total
+    if details:
+        payload["details"] = details
+    return payload
 
 
 @dataclass
@@ -95,8 +125,30 @@ class SidecarEmitter:
     def started(self, data: dict[str, Any] | None = None) -> dict[str, Any]:
         return self.emit("started", data=data)
 
-    def progress(self, data: dict[str, Any]) -> dict[str, Any]:
+    def progress(
+        self,
+        data: dict[str, Any] | None = None,
+        *,
+        stage: str | None = None,
+        message: str | None = None,
+        current: int | None = None,
+        total: int | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if data is None:
+            if stage is None or message is None:
+                raise ValueError("Progress requires data or both stage and message")
+            data = make_progress(
+                stage,
+                message,
+                current=current,
+                total=total,
+                details=details,
+            )
         return self.emit("progress", data=data)
+
+    def progress_callback(self) -> ProgressCallback:
+        return lambda data: self.progress(data)
 
     def completed(self, data: dict[str, Any] | list[Any]) -> dict[str, Any]:
         return self.emit("completed", data=data)
