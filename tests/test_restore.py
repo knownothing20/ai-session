@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 import uuid
+from contextlib import closing
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,7 +69,7 @@ class CodexRestoreTests(unittest.TestCase):
             encoding="utf-8",
         )
         database_path = self.machine_root / "metadata/latest/state_5.sqlite"
-        with sqlite3.connect(database_path) as database:
+        with closing(sqlite3.connect(database_path)) as database:
             database.execute("CREATE TABLE threads(id TEXT PRIMARY KEY)")
             database.commit()
 
@@ -143,12 +144,12 @@ class CodexRestoreTests(unittest.TestCase):
         manifest_path = self.machine_root / "manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         item = manifest["sessions"][f"codex:test-machine:{session_id}"]
-        old_path = self.machine_root / item["vault_path"]
-        new_relative = Path(
-            str(item["vault_path"]).replace(
-                "native/sessions/", "native/archived_sessions/"
-            )
-        )
+        old_relative = Path(item["vault_path"])
+        old_path = self.machine_root / old_relative
+        old_parts = old_relative.parts
+        self.assertGreaterEqual(len(old_parts), 3)
+        self.assertEqual(old_parts[:2], ("native", "sessions"))
+        new_relative = Path("native", "archived_sessions", *old_parts[2:])
         new_path = self.machine_root / new_relative
         new_path.parent.mkdir(parents=True, exist_ok=True)
         new_path.write_bytes(old_path.read_bytes())
