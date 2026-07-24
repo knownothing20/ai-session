@@ -15,6 +15,7 @@ from .core import (
     vault_machine_root,
     verify_archive,
 )
+from .protocol import PROTOCOL_VERSION, SidecarEmitter
 from .registry import build_adapter, list_adapters
 
 
@@ -40,60 +41,143 @@ def parser() -> argparse.ArgumentParser:
         default="inspect",
     )
     command.add_argument("--dry-run", action="store_true")
+    command.add_argument(
+        "--output-format",
+        choices=("pretty", "json", "jsonl"),
+        default="pretty",
+        help=(
+            "pretty keeps the existing human-readable JSON output; json emits one "
+            "compact final object; jsonl emits versioned sidecar lifecycle events"
+        ),
+    )
+    command.add_argument(
+        "--protocol-version",
+        type=int,
+        choices=(PROTOCOL_VERSION,),
+        default=PROTOCOL_VERSION,
+        help="Sidecar JSONL protocol version",
+    )
+    command.add_argument(
+        "--request-id",
+        help="Caller-supplied request identifier for JSONL sidecar events",
+    )
     return command
+
+
+def _execute(options: argparse.Namespace) -> dict:
+    if options.mode == "list-apps":
+        return {"adapters": list_adapters()}
+
+    if not options.app:
+        raise SyncError("--app is required unless --mode list-apps is used")
+    spec = build_adapter(options.app, options.source_root)
+    machine_id = derive_machine_id(options.machine_id)
+    vault_root = (
+        Path(options.vault_root).expanduser().resolve()
+        if options.vault_root
+        else None
+    )
+    if options.mode == "inspect":
+        return inspect_adapter(spec, vault_root, machine_id)
+    if options.mode == "layout":
+        if vault_root is None:
+            raise SyncError("--vault-root is required for layout")
+        return describe_layout(vault_root, spec.app_id, machine_id)
+    if options.mode == "sync":
+        if vault_root is None:
+            raise SyncError("--vault-root is required for sync")
+        return sync_archive(spec, vault_root, machine_id, options.dry_run)
+    if options.mode == "restore":
+        if vault_root is None:
+            raise SyncError("--vault-root is required for restore")
+        if not options.restore_root:
+            raise SyncError("--restore-root is required for restore")
+        machine_root = vault_machine_root(vault_root, spec.app_id, machine_id)
+        return restore_archive(
+            spec,
+            machine_root,
+            Path(options.restore_root).expanduser().resolve(),
+            options.restore_scope,
+            options.session_id,
+            options.dry_run,
+        )
+    if vault_root is None:
+        raise SyncError("--vault-root is required for verify")
+    root = vault_machine_root(vault_root, spec.app_id, machine_id)
+    return verify_archive(root)
+
+
+def _started_data(options: argparse.Namespace) -> dict:
+    """Return non-secret invocation metadata suitable for a lifecycle event."""
+
+    return {
+        "app_id": options.app,
+        "dry_run": bool(options.dry_run),
+        "restore_scope": options.restore_scope if options.mode == "restore" else None,
+        "has_vault_root": bool(options.vault_root),
+        "has_source_override": bool(options.source_root),
+        "has_restore_root": bool(options.restore_root),
+        "has_session_id": bool(options.session_id),
+    }
+
+
+def _write_final(result: dict, output_format: str, *, stream=sys.stdout) -> None:
+    if output_format == "json":
+        print(
+            json.dumps(result, ensure_ascii=False, separators=(",", ":")),
+            file=stream,
+        )
+    else:
+        print(json.dumps(result, ensure_ascii=False, indent=2), file=stream)
 
 
 def main(argv: list[str] | None = None) -> int:
     options = parser().parse_args(argv)
-    try:
-        if options.mode == "list-apps":
-            result = {"adapters": list_adapters()}
-        else:
-            if not options.app:
-                raise SyncError("--app is required unless --mode list-apps is used")
-            spec = build_adapter(options.app, options.source_root)
-            machine_id = derive_machine_id(options.machine_id)
-            vault_root = (
-                Path(options.vault_root).expanduser().resolve()
-                if options.vault_root
-                else None
-            )
-            if options.mode == "inspect":
-                result = inspect_adapter(spec, vault_root, machine_id)
-            elif options.mode == "layout":
-                if vault_root is None:
-                    raise SyncError("--vault-root is required for layout")
-                result = describe_layout(vault_root, spec.app_id, machine_id)
-            elif options.mode == "sync":
-                if vault_root is None:
-                    raise SyncError("--vault-root is required for sync")
-                result = sync_archive(spec, vault_root, machine_id, options.dry_run)
-            elif options.mode == "restore":
-                if vault_root is None:
-                    raise SyncError("--vault-root is required for restore")
-                if not options.restore_root:
-                    raise SyncError("--restore-root is required for restore")
-                machine_root = vault_machine_root(vault_root, spec.app_id, machine_id)
-                result = restore_archive(
-                    spec,
-                    machine_root,
-                    Path(options.restore_root).expanduser().resolve(),
-                    options.restore_scope,
-                    options.session_id,
-                    options.dry_run,
-                )
-            else:
-                if vault_root is None:
-                    raise SyncError("--vault-root is required for verify")
-                root = vault_machine_root(vault_root, spec.app_id, machine_id)
-                result = verify_archive(root)
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-        return 0
-    except (SyncError, ValueError) as exc:
-        print(
-            json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False, indent=2),
-            file=sys.stderr,
+    emitter: SidecarEmitter | None = None
+    if options.output_format == "jsonl":
+        emitter = SidecarEmitter(
+            options.mode,
+            request_id=options.request_id,
+            protocol_version=options.protocol_version,
         )
+        emitter.started(_started_data(options))
+
+    try:
+        result = _execute(options)
+        if emitter is not None:
+            emitter.completed(result)
+        else:
+            _write_final(result, options.output_format)
+        return 0
+    except SyncError as exc:
+        if emitter is not None:
+            emitter.failed("SYNC_ERROR", str(exc))
+        else:
+            _write_final(
+                {"ok": False, "error": str(exc)},
+                options.output_format,
+                stream=sys.stderr,
+            )
+        return 2
+    except ValueError as exc:
+        if emitter is not None:
+            emitter.failed("INVALID_ARGUMENT", str(exc))
+        else:
+            _write_final(
+                {"ok": False, "error": str(exc)},
+                options.output_format,
+                stream=sys.stderr,
+            )
         return 2
     except KeyboardInterrupt:
+        if emitter is not None:
+            emitter.failed("CANCELLED", "Operation cancelled by the caller", retryable=True)
         return 130
+    except Exception as exc:
+        # Sidecar mode must always terminate with a parseable lifecycle event.
+        # The legacy CLI retains its traceback for unexpected programming errors.
+        if emitter is None:
+            raise
+        emitter.failed("INTERNAL_ERROR", str(exc))
+        print(f"Unexpected sidecar error: {exc}", file=sys.stderr)
+        return 1
