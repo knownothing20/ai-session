@@ -4,6 +4,7 @@ import json
 import os
 import sqlite3
 import tempfile
+from contextlib import closing
 from pathlib import Path
 from typing import Iterator
 
@@ -120,12 +121,15 @@ def sqlite_snapshot(source: Path, destination: Path, dry_run: bool) -> str:
     temp_path.unlink(missing_ok=True)
     try:
         source_uri = f"file:{source.as_posix()}?mode=ro"
-        with sqlite3.connect(source_uri, uri=True, timeout=30) as src_db:
-            with sqlite3.connect(temp_path) as dst_db:
+        with closing(sqlite3.connect(source_uri, uri=True, timeout=30)) as src_db:
+            with closing(sqlite3.connect(temp_path)) as dst_db:
                 src_db.backup(dst_db)
                 result = dst_db.execute("PRAGMA quick_check").fetchone()
                 if not result or result[0] != "ok":
                     raise SyncError(f"SQLite quick_check failed: {source}")
+                dst_db.commit()
+        # Both database handles must be closed before hashing or replacing the
+        # file. Windows otherwise keeps the temporary database locked.
         digest = hash_file(temp_path)
         os.replace(temp_path, destination)
         return digest
