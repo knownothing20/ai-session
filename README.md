@@ -18,6 +18,14 @@ It separates three responsibilities:
 - Added isolated Codex single-session and full-library restore without overwriting the active `.codex` directory.
 - Added local/manual test coverage for Python 3.10 and 3.12; development does not automatically trigger GitHub Actions.
 
+## Product development plan
+
+The complete roadmap for the management UI, safe session modification, cross-machine handoff, backup/repair/restore reliability, normalized multi-source parsing, usage statistics, health checks, global search, readable export, and AI analysis is documented in:
+
+- [Full development plan](docs/FULL_DEVELOPMENT_PLAN.md)
+
+The plan defines the target architecture, normalized data model, adapter capability contract, local API, UI pages, security rules, tests, acceptance criteria, and phased implementation order.
+
 ## Supported adapters
 
 ```bash
