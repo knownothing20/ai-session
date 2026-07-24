@@ -1,11 +1,24 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tauri::{AppHandle, Emitter, State};
+
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 
 pub const SIDECAR_PROTOCOL_NAME: &str = "ai-session-vault-sidecar";
 pub const SIDECAR_PROTOCOL_VERSION: u32 = 1;
+pub const SIDECAR_EVENT_NAME: &str = "vault-sidecar-event";
 const SIDECAR_ENV: &str = "AI_SESSION_VAULT_SIDECAR";
 const PYTHON_ENV: &str = "AI_SESSION_VAULT_PYTHON";
+const MAX_TIMEOUT_SECONDS: u64 = 24 * 60 * 60;
 const ALLOWED_OPERATIONS: [&str; 6] = [
     "list-apps",
     "inspect",
@@ -15,6 +28,9 @@ const ALLOWED_OPERATIONS: [&str; 6] = [
     "restore",
 ];
 const ALLOWED_EVENTS: [&str; 4] = ["started", "progress", "completed", "failed"];
+
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct VaultSidecarError {
@@ -62,6 +78,8 @@ pub struct VaultSidecarRequest {
     pub dry_run: bool,
     #[serde(default)]
     pub request_id: Option<String>,
+    #[serde(default)]
+    pub timeout_seconds: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -71,6 +89,7 @@ pub struct VaultSidecarStatus {
     pub protocol: &'static str,
     pub protocol_version: u32,
     pub entrypoint: String,
+    pub program: String,
     pub launch_mode: String,
     pub reason: Option<String>,
 }
@@ -84,6 +103,59 @@ pub struct VaultSidecarCommandPreview {
     pub operation: String,
     pub protocol: &'static str,
     pub protocol_version: u32,
+    pub timeout_seconds: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultSidecarTaskStart {
+    pub request_id: String,
+    pub operation: String,
+    pub timeout_seconds: u64,
+    pub started_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultSidecarTaskInfo {
+    pub request_id: String,
+    pub operation: String,
+    pub started_at: String,
+    pub timeout_seconds: u64,
+    pub cancel_requested: bool,
+    pub status: String,
+}
+
+struct RunningTask {
+    operation: String,
+    started_at: String,
+    timeout_seconds: u64,
+    child: Mutex<Option<Child>>,
+    cancel_requested: AtomicBool,
+    terminal_seen: AtomicBool,
+    last_sequence: AtomicU64,
+}
+
+impl RunningTask {
+    fn info(&self, request_id: &str) -> VaultSidecarTaskInfo {
+        VaultSidecarTaskInfo {
+            request_id: request_id.to_string(),
+            operation: self.operation.clone(),
+            started_at: self.started_at.clone(),
+            timeout_seconds: self.timeout_seconds,
+            cancel_requested: self.cancel_requested.load(Ordering::SeqCst),
+            status: if self.cancel_requested.load(Ordering::SeqCst) {
+                "cancelling".to_string()
+            } else {
+                "running".to_string()
+            },
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct VaultSidecarTaskState {
+    tasks: Arc<Mutex<HashMap<String, Arc<RunningTask>>>>,
 }
 
 fn repository_root() -> PathBuf {
@@ -106,6 +178,13 @@ fn is_python_script(path: &Path) -> bool {
     path.extension()
         .and_then(|value| value.to_str())
         .is_some_and(|value| value.eq_ignore_ascii_case("py"))
+}
+
+fn now_timestamp() -> String {
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    format!("{}.{:03}Z", duration.as_secs(), duration.subsec_millis())
 }
 
 fn validate_text(value: &str, label: &str) -> Result<(), String> {
@@ -134,6 +213,27 @@ fn optional<'a>(value: &'a Option<String>, label: &str) -> Result<Option<&'a str
         }
         None => Ok(None),
     }
+}
+
+fn default_timeout_seconds(operation: &str) -> u64 {
+    match operation {
+        "list-apps" | "inspect" | "layout" => 120,
+        "verify" => 10 * 60,
+        "sync" | "restore" => 60 * 60,
+        _ => 5 * 60,
+    }
+}
+
+fn resolved_timeout_seconds(request: &VaultSidecarRequest) -> Result<u64, String> {
+    let timeout = request
+        .timeout_seconds
+        .unwrap_or_else(|| default_timeout_seconds(&request.operation));
+    if timeout == 0 || timeout > MAX_TIMEOUT_SECONDS {
+        return Err(format!(
+            "timeoutSeconds must be between 1 and {MAX_TIMEOUT_SECONDS}"
+        ));
+    }
+    Ok(timeout)
 }
 
 fn validate_request(request: &VaultSidecarRequest) -> Result<(), String> {
@@ -182,6 +282,7 @@ fn validate_request(request: &VaultSidecarRequest) -> Result<(), String> {
         optional(&request.session_id, "sessionId")?;
     }
 
+    resolved_timeout_seconds(request)?;
     Ok(())
 }
 
@@ -254,6 +355,7 @@ fn build_command_preview(
         operation: request.operation,
         protocol: SIDECAR_PROTOCOL_NAME,
         protocol_version: SIDECAR_PROTOCOL_VERSION,
+        timeout_seconds: resolved_timeout_seconds(&request)?,
     })
 }
 
@@ -295,24 +397,254 @@ pub fn parse_sidecar_event(
     Ok(event)
 }
 
+fn synthetic_failed_event(
+    task: &RunningTask,
+    request_id: &str,
+    code: &str,
+    message: String,
+    retryable: bool,
+    details: Option<Value>,
+) -> VaultSidecarEvent {
+    let sequence = task.last_sequence.fetch_add(1, Ordering::SeqCst) + 1;
+    task.terminal_seen.store(true, Ordering::SeqCst);
+    VaultSidecarEvent {
+        protocol: SIDECAR_PROTOCOL_NAME.to_string(),
+        protocol_version: SIDECAR_PROTOCOL_VERSION,
+        request_id: request_id.to_string(),
+        sequence,
+        timestamp: now_timestamp(),
+        operation: task.operation.clone(),
+        event: "failed".to_string(),
+        data: None,
+        error: Some(VaultSidecarError {
+            code: code.to_string(),
+            message,
+            retryable,
+            details,
+        }),
+    }
+}
+
+fn emit_event(app: &AppHandle, event: VaultSidecarEvent) {
+    if let Err(error) = app.emit(SIDECAR_EVENT_NAME, event) {
+        log::error!("failed to emit Vault Sidecar event: {error}");
+    }
+}
+
+fn monitor_task(
+    app: AppHandle,
+    state: VaultSidecarTaskState,
+    request_id: String,
+    task: Arc<RunningTask>,
+    stdout: impl Read + Send + 'static,
+    stderr: impl Read + Send + 'static,
+) {
+    let stdout_task = Arc::clone(&task);
+    let stdout_app = app.clone();
+    let stdout_request_id = request_id.clone();
+    let protocol_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let protocol_error_reader = Arc::clone(&protocol_error);
+
+    let stdout_thread = thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines() {
+            let line = match line {
+                Ok(line) => line,
+                Err(error) => {
+                    *protocol_error_reader.lock().expect("protocol error lock poisoned") =
+                        Some(format!("failed reading sidecar stdout: {error}"));
+                    break;
+                }
+            };
+            if line.trim().is_empty() {
+                continue;
+            }
+            let previous = stdout_task.last_sequence.load(Ordering::SeqCst);
+            match parse_sidecar_event(
+                &line,
+                &stdout_request_id,
+                &stdout_task.operation,
+                (previous > 0).then_some(previous),
+            ) {
+                Ok(event) => {
+                    stdout_task
+                        .last_sequence
+                        .store(event.sequence, Ordering::SeqCst);
+                    if matches!(event.event.as_str(), "completed" | "failed") {
+                        stdout_task.terminal_seen.store(true, Ordering::SeqCst);
+                    }
+                    emit_event(&stdout_app, event);
+                }
+                Err(error) => {
+                    *protocol_error_reader.lock().expect("protocol error lock poisoned") =
+                        Some(error);
+                    break;
+                }
+            }
+        }
+    });
+
+    let stderr_thread = thread::spawn(move || {
+        let mut reader = BufReader::new(stderr);
+        let mut output = String::new();
+        let _ = reader.read_to_string(&mut output);
+        output
+    });
+
+    let started = Instant::now();
+    let mut timed_out = false;
+    let mut exit_status: Option<ExitStatus> = None;
+
+    while exit_status.is_none() {
+        if started.elapsed() >= Duration::from_secs(task.timeout_seconds) {
+            timed_out = true;
+            task.cancel_requested.store(true, Ordering::SeqCst);
+        }
+
+        let mut child_guard = task.child.lock().expect("sidecar child lock poisoned");
+        if let Some(child) = child_guard.as_mut() {
+            if task.cancel_requested.load(Ordering::SeqCst) {
+                let _ = child.kill();
+            }
+            match child.try_wait() {
+                Ok(status) => exit_status = status,
+                Err(error) => {
+                    if !task.terminal_seen.swap(true, Ordering::SeqCst) {
+                        emit_event(
+                            &app,
+                            synthetic_failed_event(
+                                &task,
+                                &request_id,
+                                "process_wait_failed",
+                                format!("failed waiting for sidecar process: {error}"),
+                                true,
+                                None,
+                            ),
+                        );
+                    }
+                    break;
+                }
+            }
+        } else {
+            break;
+        }
+        drop(child_guard);
+        if exit_status.is_none() {
+            thread::sleep(Duration::from_millis(100));
+        }
+    }
+
+    let _ = stdout_thread.join();
+    let stderr_output = stderr_thread.join().unwrap_or_default();
+
+    if !task.terminal_seen.load(Ordering::SeqCst) {
+        let protocol_failure = protocol_error
+            .lock()
+            .expect("protocol error lock poisoned")
+            .clone();
+        let (code, message, retryable, details) = if let Some(error) = protocol_failure {
+            (
+                "protocol_error",
+                error,
+                false,
+                Some(json!({"stderr": stderr_output.trim()})),
+            )
+        } else if timed_out {
+            (
+                "timeout",
+                format!("sidecar exceeded {} seconds", task.timeout_seconds),
+                true,
+                Some(json!({"stderr": stderr_output.trim()})),
+            )
+        } else if task.cancel_requested.load(Ordering::SeqCst) {
+            (
+                "cancelled",
+                "sidecar task was cancelled".to_string(),
+                true,
+                Some(json!({"stderr": stderr_output.trim()})),
+            )
+        } else if let Some(status) = exit_status {
+            if status.success() {
+                (
+                    "missing_terminal_event",
+                    "sidecar exited successfully without a completed or failed event".to_string(),
+                    false,
+                    Some(json!({"stderr": stderr_output.trim()})),
+                )
+            } else {
+                (
+                    "process_exit",
+                    format!("sidecar exited with status {status}"),
+                    true,
+                    Some(json!({"stderr": stderr_output.trim()})),
+                )
+            }
+        } else {
+            (
+                "process_ended",
+                "sidecar process ended without a terminal event".to_string(),
+                true,
+                Some(json!({"stderr": stderr_output.trim()})),
+            )
+        };
+        emit_event(
+            &app,
+            synthetic_failed_event(&task, &request_id, code, message, retryable, details),
+        );
+    }
+
+    if let Ok(mut tasks) = state.tasks.lock() {
+        tasks.remove(&request_id);
+    }
+}
+
 #[tauri::command]
 pub fn get_vault_sidecar_status() -> VaultSidecarStatus {
     let entrypoint = sidecar_entrypoint();
-    let available = entrypoint.is_file();
+    let launch_mode = if is_python_script(&entrypoint) {
+        "python-script"
+    } else {
+        "executable"
+    };
+    let program = if launch_mode == "python-script" {
+        std::env::var(PYTHON_ENV).unwrap_or_else(|_| "python".to_string())
+    } else {
+        entrypoint.to_string_lossy().into_owned()
+    };
+    let entrypoint_available = entrypoint.is_file();
+    let program_available = if entrypoint_available && launch_mode == "python-script" {
+        Command::new(&program)
+            .arg("--version")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok()
+    } else {
+        entrypoint_available
+    };
+    let available = entrypoint_available && program_available;
+    let reason = if !entrypoint_available {
+        Some(format!(
+            "Vault Core sidecar entrypoint does not exist: {}",
+            entrypoint.display()
+        ))
+    } else if !program_available {
+        Some(format!(
+            "Vault Core requires an available Python runtime. Set {PYTHON_ENV} to the executable path."
+        ))
+    } else {
+        None
+    };
+
     VaultSidecarStatus {
         available,
         protocol: SIDECAR_PROTOCOL_NAME,
         protocol_version: SIDECAR_PROTOCOL_VERSION,
         entrypoint: entrypoint.to_string_lossy().into_owned(),
-        launch_mode: if is_python_script(&entrypoint) {
-            "python-script".to_string()
-        } else {
-            "executable".to_string()
-        },
-        reason: (!available).then(|| {
-            "Vault Core is unavailable. Set AI_SESSION_VAULT_SIDECAR or use the monorepo development layout."
-                .to_string()
-        }),
+        program,
+        launch_mode: launch_mode.to_string(),
+        reason,
     }
 }
 
@@ -321,6 +653,118 @@ pub fn preview_vault_sidecar_command(
     request: VaultSidecarRequest,
 ) -> Result<VaultSidecarCommandPreview, String> {
     build_command_preview(request)
+}
+
+#[tauri::command]
+pub fn start_vault_sidecar_task(
+    app: AppHandle,
+    state: State<'_, VaultSidecarTaskState>,
+    request: VaultSidecarRequest,
+) -> Result<VaultSidecarTaskStart, String> {
+    let preview = build_command_preview(request)?;
+    let state = state.inner().clone();
+    {
+        let tasks = state
+            .tasks
+            .lock()
+            .map_err(|_| "Vault task registry lock is poisoned".to_string())?;
+        if tasks.contains_key(&preview.request_id) {
+            return Err(format!(
+                "Vault task requestId is already active: {}",
+                preview.request_id
+            ));
+        }
+    }
+
+    let mut command = Command::new(&preview.program);
+    command
+        .args(&preview.args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(target_os = "windows")]
+    command.creation_flags(CREATE_NO_WINDOW);
+
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("failed to start Vault Core sidecar: {error}"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "failed to capture sidecar stdout".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "failed to capture sidecar stderr".to_string())?;
+    let started_at = now_timestamp();
+    let task = Arc::new(RunningTask {
+        operation: preview.operation.clone(),
+        started_at: started_at.clone(),
+        timeout_seconds: preview.timeout_seconds,
+        child: Mutex::new(Some(child)),
+        cancel_requested: AtomicBool::new(false),
+        terminal_seen: AtomicBool::new(false),
+        last_sequence: AtomicU64::new(0),
+    });
+
+    state
+        .tasks
+        .lock()
+        .map_err(|_| "Vault task registry lock is poisoned".to_string())?
+        .insert(preview.request_id.clone(), Arc::clone(&task));
+
+    let request_id = preview.request_id.clone();
+    let worker_request_id = request_id.clone();
+    thread::spawn(move || {
+        monitor_task(app, state, worker_request_id, task, stdout, stderr);
+    });
+
+    Ok(VaultSidecarTaskStart {
+        request_id,
+        operation: preview.operation,
+        timeout_seconds: preview.timeout_seconds,
+        started_at,
+    })
+}
+
+#[tauri::command]
+pub fn cancel_vault_sidecar_task(
+    state: State<'_, VaultSidecarTaskState>,
+    request_id: String,
+) -> Result<bool, String> {
+    validate_text(&request_id, "requestId")?;
+    let task = state
+        .tasks
+        .lock()
+        .map_err(|_| "Vault task registry lock is poisoned".to_string())?
+        .get(&request_id)
+        .cloned();
+    let Some(task) = task else {
+        return Ok(false);
+    };
+    task.cancel_requested.store(true, Ordering::SeqCst);
+    if let Ok(mut child_guard) = task.child.lock() {
+        if let Some(child) = child_guard.as_mut() {
+            let _ = child.kill();
+        }
+    }
+    Ok(true)
+}
+
+#[tauri::command]
+pub fn list_vault_sidecar_tasks(
+    state: State<'_, VaultSidecarTaskState>,
+) -> Result<Vec<VaultSidecarTaskInfo>, String> {
+    let tasks = state
+        .tasks
+        .lock()
+        .map_err(|_| "Vault task registry lock is poisoned".to_string())?;
+    let mut values = tasks
+        .iter()
+        .map(|(request_id, task)| task.info(request_id))
+        .collect::<Vec<_>>();
+    values.sort_by(|left, right| left.started_at.cmp(&right.started_at));
+    Ok(values)
 }
 
 #[cfg(test)]
@@ -339,6 +783,7 @@ mod tests {
             session_id: None,
             dry_run: false,
             request_id: Some("request-1".to_string()),
+            timeout_seconds: None,
         }
     }
 
@@ -371,6 +816,16 @@ mod tests {
             validate_request(&inspect).unwrap_err(),
             "appId must not contain NUL characters"
         );
+    }
+
+    #[test]
+    fn validates_timeout_range() {
+        let mut inspect = request("inspect");
+        inspect.app_id = Some("codex".to_string());
+        inspect.timeout_seconds = Some(0);
+        assert!(validate_request(&inspect).is_err());
+        inspect.timeout_seconds = Some(MAX_TIMEOUT_SECONDS + 1);
+        assert!(validate_request(&inspect).is_err());
     }
 
     #[test]
