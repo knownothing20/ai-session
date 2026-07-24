@@ -24,7 +24,7 @@ The complete roadmap for the management UI, safe session modification, cross-mac
 
 - [Full development plan](docs/FULL_DEVELOPMENT_PLAN.md)
 
-This is the next-stage implementation plan, not a claim that all roadmap modules are already complete. The plan defines the target architecture, normalized data model, adapter capability contract, local API, UI pages, security rules, tests, acceptance criteria, and phased implementation order.
+This is the next-stage implementation plan, not a claim that all roadmap modules are already complete. The document includes quick navigation, target architecture, normalized data model, adapter capability contract, local API, UI pages, security rules, tests, acceptance criteria, priorities, and phased implementation order.
 
 ## Supported adapters
 
