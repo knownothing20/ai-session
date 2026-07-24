@@ -81,7 +81,7 @@ Doctor、Repair、Handoff 和 AI 分析不属于阶段 1。
 
 ## 阶段 1 第 1 个任务包
 
-### 已完成
+### 已完成代码
 
 - [x] 定义 Sidecar JSONL Protocol v1；
 - [x] 明确协议威胁模型、终态和错误代码；
@@ -105,6 +105,19 @@ Doctor、Repair、Handoff 和 AI 分析不属于阶段 1。
 - [ ] 实现 Vault 设置和任务中心 UI；
 - [ ] 实现 inspect、sync、verify 和 restore 完整 UI 流程；
 - [ ] 完成 Windows 本地 Python、Rust、前端和集成验证。
+
+### 验证状态
+
+本任务包通过 GitHub 在线修改完成，没有可执行的本地仓库环境，因此目前只完成了静态代码审阅；新增 Python、Rust 和 TypeScript 代码尚未在 Windows 本地运行。不得把测试文件已提交描述为测试已通过。
+
+下一次本地验证至少需要：
+
+```text
+python -m compileall -q scripts tests
+python -m unittest tests.test_sidecar_protocol -v
+cargo test --manifest-path desktop/src-tauri/Cargo.toml vault_sidecar
+cd desktop && corepack pnpm build
+```
 
 ## 阶段 1 入口资料
 
