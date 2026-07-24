@@ -6,19 +6,25 @@ import sys
 import tempfile
 import unittest
 import uuid
+from contextlib import closing
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from session_vault.archive import iter_session_files  # noqa: E402
-from session_vault.core import inspect_adapter, sync_archive, vault_machine_root, verify_archive  # noqa: E402
+from session_vault.core import (  # noqa: E402
+    inspect_adapter,
+    sync_archive,
+    vault_machine_root,
+    verify_archive,
+)
 from session_vault.registry import build_adapter  # noqa: E402
 
 
 def make_db(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(path) as db:
+    with closing(sqlite3.connect(path)) as db:
         db.execute("create table sessions(id text primary key, title text)")
         db.execute("insert into sessions values ('s1', 'test')")
         db.commit()
