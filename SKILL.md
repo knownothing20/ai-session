@@ -1,328 +1,366 @@
 ---
 name: agent-session-vault-sync
-description: Incrementally archive this AI coding application's native local sessions to a user-selected portable disk, including its latest SQLite or index snapshots, while detecting duplicates and never modifying the source. Use when the user asks to back up, migrate, synchronize, inspect, verify, or deduplicate Codex, Claude Code, or another supported agent's local session history.
+description: Inspect, incrementally archive, verify, and safely restore common AI coding applications' native local sessions in a user-selected portable Agent Session Vault. Uses independent evidence-backed adapters, precise file patterns, stable app/machine folders, SQLite online snapshots, duplicate detection, conflict preservation, non-destructive synchronization, capability-gated native restore, and a local desktop Vault console using a versioned Sidecar protocol. Use when the user asks to back up, migrate, synchronize, inspect, verify, restore, manage, search, repair, export, analyze, or extend support for coding-agent session history.
 ---
 
-# Agent Session Vault Sync
+# Agent Session Vault
 
 ## Goal
 
-Archive the current AI coding application's own native session data into a portable **Agent Session Vault** selected by the user.
+Protect supported coding applications' native session history in a user-selected internal disk, external disk, or mounted storage without modifying active source data, and provide evidence-backed isolated recovery where supported.
 
-The workflow must:
+The monorepo contains:
 
-1. Identify the current host application and its native storage mechanism.
-2. Locate that application's matching folder inside the selected vault.
-3. Incrementally copy new or changed session files.
-4. Save the latest consistent SQLite and index snapshots without attempting to merge vendor databases.
-5. Detect exact duplicates, growing active sessions, and divergent conflicts.
-6. Produce a machine-readable and human-readable sync report.
+```text
+ai-session/
+├── desktop/                  Tauri / React / Rust desktop application
+├── scripts/session_vault/    Python Vault Core
+├── tests/
+├── docs/
+└── references/
+```
 
-## Required helper
+The deterministic CLI remains:
 
-Use `scripts/vault_sync.py` for inspection, synchronization, verification, hashing, locking, atomic writes, and SQLite snapshots.
+```text
+scripts/vault_sync.py
+```
 
-Do not replace deterministic script behavior with improvised shell copy commands unless the helper cannot run. If the helper fails, stop and report the exact failure. Do not silently fall back to unsafe copying.
+Do not replace it with improvised copy commands. If it fails, report the exact failure instead of silently falling back.
 
-## Supported applications in V0.1
+## Architecture
 
-- `codex`
-- `claude-code`
+1. CCHV-derived Rust Providers read native sessions for viewing, search, and statistics.
+2. Python adapters under `scripts/session_vault/adapters/` define native roots, exact transcript/session patterns, SQLite files, indexes, exclusions, stable IDs, and optional restore strategies.
+3. Python Vault Core performs initialization, folder creation, incremental synchronization, SHA-256 comparison, SQLite snapshots, conflict preservation, reports, locking, verification, and restore.
+4. Rust Sidecar Bridge starts the Python Core without a shell, validates JSONL Protocol v1, manages cancellation and timeout, and emits Tauri events.
+5. React Vault Console configures operations and displays progress, errors, results, reports, and recovery actions.
 
-For any other application, do not guess and do not copy files yet. First inspect its documented and observed local storage, then prepare a new adapter proposal following `references/adapter-contract.md`.
+Never put vendor-specific storage rules in the shared Core or recreate the backup implementation in Rust.
+
+## Development stages
+
+The project has five large stages. The unique status source is:
+
+```text
+docs/DEVELOPMENT_STAGE_STATUS.md
+```
+
+Current state:
+
+```text
+Stage 0: completed
+Stage 1: online implementation complete; Windows automatic and manual desktop acceptance pending
+Stages 2–4: not started
+```
+
+Every development response must begin with the current stage and remaining stages. Work continuously through the entire stage rather than stopping at internal task-package boundaries. Never mark a stage complete without its Definition of Done.
+
+## Stage 1 desktop baseline
+
+The desktop Vault Console is available at:
+
+```text
+Settings → Session Vault
+```
+
+Implemented online:
+
+- supported application discovery;
+- Vault Root, machine ID, and optional source override;
+- inspect and layout preview;
+- backup dry-run and real incremental sync;
+- integrity verification;
+- Codex single-session/full restore dry-run and real isolated restore;
+- real-time progress, cancellation, timeout, structured errors, events, and report paths;
+- five existing languages.
+
+Sidecar runtime:
+
+```text
+Default Python: python
+Override Python: AI_SESSION_VAULT_PYTHON
+Override Sidecar: AI_SESSION_VAULT_SIDECAR
+Protocol: ai-session-vault-sidecar v1
+```
+
+Stage 1 is not complete until this passes on the real Windows checkout:
+
+```powershell
+powershell -ExecutionPolicy Bypass `
+  -File .\scripts\validate_phase1.ps1 `
+  -Launch
+```
+
+The result must be `passed-complete` with `ui_accepted: true` in `docs/PHASE_1_LOCAL_VALIDATION.json`.
+
+## Supported applications
+
+Discover the live list:
+
+```bash
+python scripts/vault_sync.py --mode list-apps
+```
+
+Current adapters:
+
+- Transcript/session artifacts: `codex`, `claude-code`, `gemini-cli`, `qwen-code`, `kimi-cli`.
+- Shared SQLite snapshot: `opencode`, `goose`, `hermes-agent`.
+- Project rolling history: `aider`.
+
+Read `references/common-adapters.md` before changing an adapter or claiming restore capability. A SQLite snapshot adapter preserves the full vendor database but does not provide row-level session copy/delete. Aider preserves rolling project history, not one native file per session.
 
 ## Inputs
 
-Resolve these inputs before synchronization:
+Resolve:
 
-- `app_id`: the application currently running this skill.
-- `vault_root`: the user-selected root directory on an internal disk, external disk, or mounted storage.
-- `source_root`: optional override for the application's native data directory.
-- `mode`: `inspect`, `sync`, or `verify`.
+- `app_id`: adapter ID or alias;
+- `vault_root`: exact user-selected Vault directory;
+- `source_root`: optional native source override;
+- `machine_id`: optional stable human-readable machine ID;
+- `mode`: `inspect`, `layout`, `sync`, `verify`, `restore`, or `list-apps`;
+- `dry_run`: preflight without writes;
+- restore-only: `restore_root`, `restore_scope`, and optional `session_id`;
+- Sidecar-only: `output_format=jsonl`, `protocol_version`, `request_id`.
 
-The user may provide the vault as a Windows drive path or Linux mount path. Always use the exact path supplied by the user. Do not hard-code a drive letter.
+Machine ID priority:
 
-## Host application identification
+1. `--machine-id`
+2. `AGENT_VAULT_MACHINE_ID`
+3. deterministic host-derived fallback
 
-Identify the host application from reliable runtime evidence and conversation context.
+Recommend an explicit machine ID for removable drives used across reinstalls or host renames.
 
-Examples:
+## Folder rules
 
-- In Codex, use `app_id=codex`.
-- In Claude Code, use `app_id=claude-code`.
-
-If application identity is ambiguous, run inspection only. Do not synchronize under a guessed application name.
-
-## Source rules
-
-Treat all native application storage as read-only.
-
-Never:
-
-- edit the source SQLite database;
-- rebuild the source application's index;
-- delete source sessions;
-- copy authentication tokens or API credentials;
-- copy caches, logs, generated worktrees, or unrelated temporary data by default.
-
-For Codex, default source-root resolution is:
-
-1. Explicit `--source-root`, when supplied.
-2. `CODEX_HOME`, when set.
-3. `~/.codex`.
-
-The Codex adapter archives:
-
-- `sessions/**/*.jsonl`
-- `archived_sessions/**/*.jsonl`
-- `state_*.sqlite` as consistent snapshots
-- `session_index.jsonl`
-- `external_agent_session_imports.json`, when present
-
-It excludes authentication and diagnostic-log databases by default.
-
-## Vault discovery and layout
-
-The selected root is a vault when it contains `vault.json`. If the root is empty and writable, the helper may initialize it.
-
-Use this layout:
+The user supplies only `<vault-root>`. The Core builds:
 
 ```text
-AgentSessionVault/
+<vault-root>/
 ├── vault.json
 └── apps/
     └── <app_id>/
         └── machines/
             └── <machine_id>/
-                ├── native/
-                │   ├── sessions/
-                │   ├── archived_sessions/
-                │   └── projects/
-                ├── metadata/
-                │   ├── latest/
-                │   └── history/
-                ├── conflicts/
-                ├── reports/
-                └── manifest.json
+                ├── machine.json
+                ├── manifest.json
+                ├── native/<collection>/...
+                ├── metadata/latest/
+                ├── metadata/history/<timestamp>/
+                ├── conflicts/<session_or_artifact_id>/
+                └── reports/
 ```
 
-The database and index snapshot are **per application and per source machine**. Never let a second computer overwrite another computer's latest database snapshot.
+Rules:
 
-## Workflow
+- adapter defines `app_id`, collections, exact patterns, SQLite/index files, exclusions, and restore capability;
+- transcript paths remain relative to the native collection root;
+- SQLite and indexes are isolated per app and machine;
+- never initialize a non-empty directory without a valid `vault.json`;
+- source deletion never deletes an archive copy.
 
-### 1. Inspect
+## Required archive workflow
 
-Always inspect before the first synchronization on a machine or after an application upgrade that may have changed storage format.
-
-Run:
+### 1. Confirm support
 
 ```bash
-python scripts/vault_sync.py --app <app_id> --mode inspect
+python scripts/vault_sync.py --mode list-apps
 ```
 
-Review:
+For unsupported applications, stop and prepare an evidence-backed adapter. Do not guess paths or database semantics.
 
-- resolved source root;
-- session categories and counts;
-- detected SQLite files;
-- detected index files;
-- excluded sensitive files.
+### 2. Inspect
 
-If inspection finds no source root or no plausible session files, stop. Do not initialize a misleading empty archive.
+```bash
+python scripts/vault_sync.py \
+  --app <app_id> \
+  --mode inspect \
+  [--source-root "<source_root>"] \
+  [--vault-root "<vault_root>"] \
+  [--machine-id "<machine_id>"]
+```
 
-### 2. Dry run
+Review the resolved source, exact artifact count, SQLite/index files, sensitive exclusions, and planned machine folder. If expected native files are absent, do not run sync.
 
-Before the first real synchronization to a vault, run:
+### 3. Preview layout
+
+```bash
+python scripts/vault_sync.py \
+  --app <app_id> \
+  --mode layout \
+  --vault-root "<vault_root>" \
+  [--machine-id "<machine_id>"]
+```
+
+### 4. Dry run
 
 ```bash
 python scripts/vault_sync.py \
   --app <app_id> \
   --mode sync \
   --vault-root "<vault_root>" \
+  [--source-root "<source_root>"] \
+  [--machine-id "<machine_id>"] \
   --dry-run
 ```
 
-Summarize the planned source, destination, session count, metadata files, and exclusions.
-
-### 3. Synchronize
-
-After a valid inspection and dry run, run:
+### 5. Synchronize
 
 ```bash
 python scripts/vault_sync.py \
   --app <app_id> \
   --mode sync \
-  --vault-root "<vault_root>"
+  --vault-root "<vault_root>" \
+  [--source-root "<source_root>"] \
+  [--machine-id "<machine_id>"]
 ```
 
-When `source_root` is overridden, add:
-
-```text
---source-root "<source_root>"
-```
-
-### 4. Verify
-
-After synchronization, run:
+### 6. Verify
 
 ```bash
 python scripts/vault_sync.py \
   --app <app_id> \
   --mode verify \
-  --vault-root "<vault_root>"
+  --vault-root "<vault_root>" \
+  [--machine-id "<machine_id>"]
 ```
 
-Do not report success when verification reports a missing file or hash mismatch.
+Do not report success unless verification returns `ok: true`. In Sidecar mode, `ok: false` emits `VERIFY_FAILED`.
 
-## Incremental session synchronization
+## Codex isolated restore
 
-Use the manifest to avoid copying every historical file on every run.
+Only adapters declaring a tested `restore_strategy` may restore. Codex currently supports isolated rollout backfill.
 
-The logical identity of a session is:
+```bash
+python scripts/vault_sync.py \
+  --app codex \
+  --mode restore \
+  --restore-scope session \
+  --session-id "<thread-uuid>" \
+  --vault-root "<vault_root>" \
+  --machine-id "<machine_id>" \
+  --restore-root "<new-empty-path>" \
+  --dry-run
+```
+
+Full restore:
+
+```bash
+python scripts/vault_sync.py \
+  --app codex \
+  --mode restore \
+  --restore-scope full \
+  --vault-root "<vault_root>" \
+  --machine-id "<machine_id>" \
+  --restore-root "<new-empty-path>"
+```
+
+Restore rules:
+
+- destination must not exist and must be outside active source and Vault machine directories;
+- verify selected archive hashes before writing;
+- write to a temporary sibling and publish by atomic rename;
+- never restore `auth.json`, credentials, or old state SQLite;
+- let Codex create a fresh database and backfill from rollout files;
+- create launchers and `restore-report.json`;
+- never claim success unless published output and report agree.
+
+See `references/codex-restore.md`.
+
+## Transcript and artifact rules
+
+Logical identity:
 
 ```text
-app_id + machine_id + native_session_id
+app_id + machine_id + native_session_or_artifact_id
 ```
 
-The content identity is:
+Content identity is SHA-256 of file bytes.
 
-```text
-SHA-256 of the session file bytes
+Apply in order:
+
+1. unchanged size/timestamp and destination exists: skip;
+2. same logical identity and hash: skip exact duplicate;
+3. existing archive is an exact byte prefix: atomically update growing transcript;
+4. same logical identity with divergent bytes: preserve old revision under `conflicts/`;
+5. different identities with same hash: retain both and mark duplicate content;
+6. missing source file: retain the archive copy.
+
+Never delete or hard-link duplicate native files because vendor indexes may reference both identities.
+
+## SQLite and index rules
+
+- Never merge vendor SQLite databases.
+- Never insert transcript files into a vendor database.
+- Use SQLite online Backup API.
+- Explicitly close database handles before publishing on Windows.
+- Run `PRAGMA quick_check` before publishing.
+- Keep the current snapshot under `metadata/latest/`.
+- Preserve previous snapshots under `metadata/history/<timestamp>/`.
+- Copy indexes atomically; never concatenate vendor indexes.
+- Treat `manifest.json` as the Vault catalog.
+
+## Cancellation and locking
+
+- Rust cancellation and timeout kill the Sidecar child process.
+- A killed process may not execute Python `finally`.
+- Vault locks store the owning PID.
+- The next operation immediately reclaims a lock if the PID no longer exists.
+- A lock owned by an active process remains protected.
+- Failure, timeout, cancellation, protocol error, or missing terminal event must never be reported as success.
+
+## Source safety
+
+Treat source storage as read-only. Never:
+
+- edit or rebuild source SQLite/indexes without an explicit capability-gated repair plan;
+- delete native sessions;
+- copy login credentials, API keys, OAuth/token files, keychain exports, or `.env` files;
+- copy logs, caches, runtime state, worktree sidecars, tool outputs, or project source unless the adapter proves they are required session artifacts.
+
+## Development and testing policy
+
+Development must not create or trigger GitHub Actions unless the user explicitly authorizes it.
+
+Local checks:
+
+```bash
+python -m compileall -q scripts tests
+python -m unittest discover -s tests -v
+python scripts/phase1_smoke.py
 ```
 
-Do not use title, project path, modification time, date folder, or filename alone as a unique identity.
+Full Stage 1 Windows validation:
 
-### Duplicate rules
-
-Apply these rules in order:
-
-1. **Same logical identity, unchanged size and modification timestamp, destination exists**
-   - Skip without hashing again.
-
-2. **Same logical identity and same SHA-256**
-   - Skip as an exact duplicate.
-   - Refresh only manifest observation metadata.
-
-3. **Same logical identity and the old archived file is an exact byte prefix of the source**
-   - Treat as an active session that has grown.
-   - Atomically replace the archived current version.
-   - Increment its revision number.
-
-4. **Same logical identity but divergent bytes**
-   - Do not silently overwrite history.
-   - Copy the old archived revision into `conflicts/<session_id>/`.
-   - Atomically save the new source as the current revision.
-   - Mark the event as `conflict-replaced` in the manifest and report.
-
-5. **Different logical identities but identical SHA-256**
-   - Mark as duplicate content.
-   - Keep both native paths in V0.1 so a later native restore remains possible.
-   - Do not automatically delete or hard-link them.
-
-6. **Source file disappeared since the previous sync**
-   - Do not delete it from the vault.
-   - A backup archive is append/update, not a destructive mirror.
-
-## SQLite handling
-
-A vendor SQLite database represents machine-level state, not one independent session file.
-
-Therefore:
-
-- Never attempt to merge two SQLite databases.
-- Never insert individual copied sessions into the archived vendor database.
-- Keep only the latest consistent snapshot under `metadata/latest/`.
-- Before replacing a changed latest snapshot, preserve the previous snapshot under `metadata/history/`.
-- Prefer the SQLite online backup API.
-- Run `PRAGMA quick_check` on the new snapshot before publishing it.
-- Write through a temporary file and atomically rename it into place.
-- If a consistent snapshot cannot be produced, leave the previous snapshot unchanged and report failure.
-
-The transcript files and the database/index snapshot are synchronized in the same run, but they remain separate archive components.
-
-## Index handling
-
-Copy index files atomically.
-
-Do not append two vendor indexes together and do not deduplicate their lines independently unless a specific adapter defines a verified reconstruction procedure.
-
-The vault's own `manifest.json` is the authoritative archive catalog. Vendor indexes are preserved as snapshots for future restore and inspection.
-
-## Multi-computer behavior
-
-The same external disk may be used by multiple computers.
-
-Each source computer must have a stable machine ID. The helper derives one automatically, or the user can set:
-
-```text
-AGENT_VAULT_MACHINE_ID
+```powershell
+powershell -ExecutionPolicy Bypass `
+  -File .\scripts\validate_phase1.ps1 `
+  -Launch
 ```
 
-Use a human-readable stable override when the computer hostname may change.
+Do not add files under `.github/workflows/`, rerun workflows, or use remote CI as a substitute for local validation. Destructive tests must use temporary HOME, source, Vault, and restore directories.
 
-Never store multiple computers' state databases in one shared `metadata/latest/` folder.
+## Adding or reviewing an adapter
 
-## Concurrency and removable-drive safety
+Follow:
 
-Before writing, acquire the per-app/per-machine `.sync.lock`.
+- `references/adapter-contract.md`
+- `references/common-adapters.md`
+- `docs/FULL_DEVELOPMENT_PLAN.md`
 
-Do not run two synchronization processes against the same app-machine folder at the same time.
+Use upstream source or official documentation as evidence. Add sanitized tests for root resolution, precise file selection, stable IDs, repeated sync, append, conflict, duplicates, SQLite snapshots, verification, progress, and restore when declared.
 
-All manifest, index, session replacement, and database publication operations must use temporary files followed by atomic rename.
-
-If the removable disk disconnects or runs out of space:
-
-- stop the run;
-- keep previously published files unchanged when possible;
-- do not mark the run successful;
-- leave a clear error report.
-
-## Security
-
-Do not archive these by default:
-
-- `auth.json` or equivalent login credentials;
-- API keys and token files;
-- keychain or credential-store exports;
-- diagnostic logs unless the user explicitly requests them;
-- project source code outside session transcripts;
-- generated worktrees and caches.
-
-Before showing a report, avoid printing full secret-bearing source content. Paths may be shown, but redact obvious tokens in command output.
-
-## Deletion boundary
-
-This skill synchronizes and verifies archives. It does not permanently delete native sessions.
-
-A later cleanup workflow may classify archived sessions, but deletion must operate through a separate review/trash process and must not directly edit a vendor SQLite snapshot.
+Proprietary applications without a stable public storage contract remain deferred until a read-only inventory from a real installation is available.
 
 ## Required result report
 
-After every run, report:
+After synchronization or restore report:
 
-- application and machine ID;
-- resolved source root and vault root;
-- sessions scanned;
-- new or updated sessions copied;
-- unchanged sessions skipped;
-- duplicate-content detections;
-- conflict revisions preserved;
-- SQLite/index snapshots updated, skipped, or failed;
+- adapter/app and machine ID;
+- source, Vault, and target folder;
+- scanned, copied, skipped, selected, restored, duplicate, and conflict counts;
+- metadata updated, skipped, failed, or deliberately excluded;
+- warnings;
 - verification result;
-- warnings and exact paths to the latest report.
-
-Never say “all backed up” unless the script completed successfully and verification passed.
-
-## Acceptance criteria
-
-The workflow is correct only when all of these are true:
-
-1. Re-running without source changes copies no session content again.
-2. Appending messages to an existing session updates only that logical session.
-3. An already copied session with the same hash is skipped.
-4. Divergent content with the same native session ID preserves the earlier revision.
-5. A second computer stores its database and index snapshots in a separate machine folder.
-6. A source deletion does not erase the vault copy.
-7. No authentication file is copied by default.
-8. SQLite snapshots pass integrity verification.
-9. `verify` returns no missing files or hash mismatches.
+- report location;
+- whether the result came from CLI or Sidecar UI.

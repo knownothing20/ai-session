@@ -1,0 +1,62 @@
+# AI Session Vault 开发执行规则
+
+## 阶段制开发
+
+本项目共 5 个大阶段，编号 0–4。每个阶段是一个独立大任务包。
+
+每次开始实际开发前，必须先向用户明确：
+
+```text
+阶段 X / 共 5 阶段：<阶段名称>
+当前阶段完成后还剩 Y 个阶段
+```
+
+当前阶段及完成情况以 `docs/DEVELOPMENT_STAGE_STATUS.md` 为唯一状态源。
+
+规则：
+
+1. 当前阶段未满足 Definition of Done，不得进入下一阶段；
+2. 不得把计划、脚本、测试文件或未验证代码描述为已完成功能；
+3. 阶段内可以拆分提交和内部子任务，但不得在任务包或提交边界停止开发；
+4. 必须连续推进到整个阶段完成，或只剩必须由真实本地环境、硬件或用户账号执行的不可替代验收；
+5. 遇到本地硬门槛时，先完成全部可在线实施、测试代码、验收脚本、文档和静态审计，再准确列出唯一剩余动作；
+6. 每次开发结束后更新阶段台账；
+7. 每个阶段使用一个 GitHub 大任务 Issue 跟踪；
+8. Windows 专属功能必须在真实 Windows 环境验证后才能标记通过。
+
+## 五阶段路线
+
+0. 开源桌面底座导入与基线稳定；
+1. 接入现有备份、校验和 Codex 恢复；
+2. 健康检查、安全修复和会话管理增强；
+3. 导出、跨电脑交接和 Vault 搜索增强；
+4. 统一统计、AI 分析和产品化完善。
+
+## GitHub Actions 禁令
+
+未经用户单独明确授权，禁止：
+
+- 创建或修改 `.github/workflows/`；
+- 新增 GitHub Actions；
+- 触发、重跑或启用 Workflow；
+- 添加 `push`、`pull_request`、`schedule`、`cron` 或 `workflow_dispatch`；
+- 使用 Actions 构建安装包或代替本地测试。
+
+开发验证使用本地静态检查、本地单元测试和本地构建。
+
+## 当前阶段
+
+```text
+阶段 1 / 共 5 阶段：接入现有备份、校验和 Codex 恢复
+当前阶段完成后还剩 3 个阶段
+状态：线上实现完成，Windows 本地自动验证与人工桌面验收待执行
+```
+
+阶段 1 依据：
+
+- `docs/DEVELOPMENT_STAGE_STATUS.md`
+- `docs/PHASE_1_BACKUP_RESTORE_INTEGRATION.md`
+- `docs/SIDECAR_PROTOCOL_V1.md`
+- `docs/PHASE_1_RUNTIME_STRATEGY.md`
+- `docs/PHASE_1_ACCEPTANCE_REPORT.md`
+- GitHub Issue #3

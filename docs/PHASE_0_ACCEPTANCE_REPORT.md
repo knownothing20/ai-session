@@ -1,0 +1,25 @@
+# 阶段 0 验收报告
+
+- 仓库：D:\GitHub\ai-session
+- 分支：agent/modular-adapters-v0.2
+- 上游版本：v1.22.0
+- 上游提交：2e29912c8743c997f203e903e6ae0054865cb8e3
+- Windows 版本：Microsoft Windows 11 Professional (10.0.26200)
+- Git 版本：2.54.0.windows.1
+- Node 版本：v24.15.0
+- pnpm 版本：10.13.1
+- rustc 版本：1.97.1 (8bab26f4f 2026-07-14)
+- cargo 版本：1.97.1 (c980f4866 2026-06-30)
+- GitHub Workflow：不存在
+- pnpm install：通过
+- pnpm build：通过
+- cargo check：通过
+- pnpm tauri dev：通过（窗口正常打开，页面加载正常）
+- Python compileall：通过
+- Python unittest：与导入前一致（5 failures, 11 errors — 均为已有的 Windows 平台兼容性问题，非导入引入）
+- 应用窗口：已确认
+- 已知问题：
+  - Python 测试在 Windows 上存在 SQLite 文件锁（PermissionError WinError 32）和路径分隔符问题，这些是已有问题，与桌面代码导入无关
+  - 上游原始 `beforeDevCommand` 使用 `just`（命令运行器），已替换为 `pnpm dev` 以适配 Windows
+  - 上游原始 Vite 默认端口 5173 可能被其他程序占用，已改为 1420 并设置 strictPort
+- 是否允许进入阶段 1：是
