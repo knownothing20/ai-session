@@ -11,6 +11,7 @@ $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $DesktopRoot = Join-Path $RepoRoot "desktop"
 $ReportPath = Join-Path $RepoRoot "docs\PHASE_1_LOCAL_VALIDATION.json"
 $Results = [System.Collections.Generic.List[object]]::new()
+$UiAccepted = $false
 
 function Write-Step {
     param([string]$Message)
@@ -32,6 +33,20 @@ function Invoke-External {
     & $FilePath @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw "命令失败（退出码 $LASTEXITCODE）：$FilePath $($Arguments -join ' ')"
+    }
+}
+
+function Read-Version {
+    param(
+        [string]$FilePath,
+        [string[]]$Arguments
+    )
+    try {
+        $output = (& $FilePath @Arguments 2>&1 | Select-Object -First 1)
+        return [string]$output
+    }
+    catch {
+        return "unavailable: $($_.Exception.Message)"
     }
 }
 
@@ -74,10 +89,19 @@ function Write-Report {
         repository = $RepoRoot
         branch = $branch
         head = $head
-        windows = [System.Environment]::OSVersion.VersionString
-        powershell = $PSVersionTable.PSVersion.ToString()
+        environment = [ordered]@{
+            windows = [System.Environment]::OSVersion.VersionString
+            powershell = $PSVersionTable.PSVersion.ToString()
+            git = Read-Version "git" @("--version")
+            python = Read-Version "python" @("--version")
+            node = Read-Version "node" @("--version")
+            pnpm = Read-Version "corepack" @("pnpm", "--version")
+            rustc = Read-Version "rustc" @("--version")
+            cargo = Read-Version "cargo" @("--version")
+        }
         results = $Results
         launch_requested = [bool]$Launch
+        ui_accepted = $UiAccepted
         github_actions_used = $false
     }
     $payload | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ReportPath -Encoding UTF8
@@ -87,6 +111,7 @@ function Write-Report {
 Set-Location $RepoRoot
 Require-Command "git"
 Require-Command "python"
+Require-Command "node"
 Require-Command "corepack"
 Require-Command "cargo"
 Require-Command "rustc"
@@ -177,8 +202,14 @@ try {
         if ($Launch) {
             Invoke-ValidationStep "启动 Tauri 进行人工 UI 验收" {
                 Write-Host "请在窗口中打开：设置 → 会话保险箱。" -ForegroundColor Yellow
-                Write-Host "依次验证检查、备份预演、真实备份、校验和 Codex 恢复。关闭窗口后脚本继续。" -ForegroundColor Yellow
+                Write-Host "依次验证应用发现、检查、目录预览、备份预演、真实备份、校验、取消后重试、Codex 单会话和整库恢复。" -ForegroundColor Yellow
+                Write-Host "完成后关闭 Tauri 窗口，脚本会要求明确确认。" -ForegroundColor Yellow
                 Invoke-External "corepack" @("pnpm", "tauri", "dev")
+                $confirmation = Read-Host "全部人工验收项是否真实通过？输入 YES 确认"
+                if ($confirmation -cne "YES") {
+                    throw "人工桌面验收未确认通过"
+                }
+                $script:UiAccepted = $true
             }
         }
     }
@@ -186,13 +217,21 @@ try {
         Pop-Location
     }
 
-    $overall = if ($Launch) { "passed-with-ui-launch" } else { "passed-automated" }
+    $overall = if ($Launch -and $UiAccepted) {
+        "passed-complete"
+    }
+    elseif ($Launch) {
+        "failed-ui-acceptance"
+    }
+    else {
+        "passed-automated"
+    }
 }
 finally {
     Write-Report $overall
 }
 
-Write-Host "`n阶段 1 自动验证完成：$overall" -ForegroundColor Green
+Write-Host "`n阶段 1 验证结果：$overall" -ForegroundColor Green
 if (-not $Launch) {
-    Write-Host "正式阶段验收还需再次使用 -Launch，并人工确认 Vault 控制台完整流程。" -ForegroundColor Yellow
+    Write-Host "阶段 1 尚未完成：还需再次使用 -Launch，并明确输入 YES 确认完整 Vault 控制台流程。" -ForegroundColor Yellow
 }
