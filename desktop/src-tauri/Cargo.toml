@@ -1,10 +1,10 @@
 [package]
 name = "ai-session-vault-desktop"
 version = "1.22.0"
-description = "Claude Code 雽€頇?旮半鞚?韮愳儔頃橁碃 攵勳劃頃橂姅 雿办姢韥啽 鞎犿攲毽紑鞚挫厴"
-authors = ["JaeHyeok Lee"]
+description = "Local-first desktop application for browsing and protecting AI coding sessions"
+authors = ["JaeHyeok Lee", "knownothing20"]
 license = "MIT"
-repository = "https://github.com/jhlee0409/claude-code-history-viewer"
+repository = "https://github.com/knownothing20/ai-session"
 edition = "2021"
 rust-version = "1.77.2"
 
@@ -167,4 +167,3 @@ ptr_arg = "allow"
 format_push_string = "allow"
 duplicated_attributes = "allow"
 return_self_not_must_use = "allow"
-
