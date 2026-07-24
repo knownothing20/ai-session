@@ -20,6 +20,7 @@ pub const SIDECAR_EVENT_NAME: &str = "vault-sidecar-event";
 const SIDECAR_ENV: &str = "AI_SESSION_VAULT_SIDECAR";
 const PYTHON_ENV: &str = "AI_SESSION_VAULT_PYTHON";
 const MAX_TIMEOUT_SECONDS: u64 = 24 * 60 * 60;
+const MAX_STDERR_BYTES: u64 = 64 * 1024;
 const ALLOWED_OPERATIONS: [&str; 6] = [
     "list-apps",
     "inspect",
@@ -437,6 +438,17 @@ fn emit_event(app: &AppHandle, event: VaultSidecarEvent) {
     }
 }
 
+fn diagnostic_details(stderr: &str, truncated: bool) -> Option<Value> {
+    if stderr.trim().is_empty() && !truncated {
+        None
+    } else {
+        Some(json!({
+            "stderr": stderr.trim(),
+            "stderr_truncated": truncated,
+        }))
+    }
+}
+
 fn monitor_task(
     app: AppHandle,
     request_id: String,
@@ -456,8 +468,11 @@ fn monitor_task(
             let line = match line {
                 Ok(line) => line,
                 Err(error) => {
-                    *protocol_error_reader.lock().expect("protocol error lock poisoned") =
+                    *protocol_error_reader
+                        .lock()
+                        .expect("protocol error lock poisoned") =
                         Some(format!("failed reading sidecar stdout: {error}"));
+                    stdout_task.cancel_requested.store(true, Ordering::SeqCst);
                     break;
                 }
             };
@@ -475,14 +490,20 @@ fn monitor_task(
                     stdout_task
                         .last_sequence
                         .store(event.sequence, Ordering::SeqCst);
-                    if matches!(event.event.as_str(), "completed" | "failed") {
+                    let terminal = matches!(event.event.as_str(), "completed" | "failed");
+                    if terminal {
                         stdout_task.terminal_seen.store(true, Ordering::SeqCst);
                     }
                     emit_event(&stdout_app, event);
+                    if terminal {
+                        break;
+                    }
                 }
                 Err(error) => {
-                    *protocol_error_reader.lock().expect("protocol error lock poisoned") =
-                        Some(error);
+                    *protocol_error_reader
+                        .lock()
+                        .expect("protocol error lock poisoned") = Some(error);
+                    stdout_task.cancel_requested.store(true, Ordering::SeqCst);
                     break;
                 }
             }
@@ -490,10 +511,14 @@ fn monitor_task(
     });
 
     let stderr_thread = thread::spawn(move || {
-        let mut reader = BufReader::new(stderr);
-        let mut output = String::new();
-        let _ = reader.read_to_string(&mut output);
-        output
+        let mut reader = BufReader::new(stderr).take(MAX_STDERR_BYTES + 1);
+        let mut bytes = Vec::new();
+        let _ = reader.read_to_end(&mut bytes);
+        let truncated = bytes.len() as u64 > MAX_STDERR_BYTES;
+        if truncated {
+            bytes.truncate(MAX_STDERR_BYTES as usize);
+        }
+        (String::from_utf8_lossy(&bytes).into_owned(), truncated)
     });
 
     let started = Instant::now();
@@ -514,6 +539,8 @@ fn monitor_task(
             match child.try_wait() {
                 Ok(status) => exit_status = status,
                 Err(error) => {
+                    task.cancel_requested.store(true, Ordering::SeqCst);
+                    let _ = child.kill();
                     if !task.terminal_seen.load(Ordering::SeqCst) {
                         emit_event(
                             &app,
@@ -540,33 +567,29 @@ fn monitor_task(
     }
 
     let _ = stdout_thread.join();
-    let stderr_output = stderr_thread.join().unwrap_or_default();
+    let (stderr_output, stderr_truncated) = stderr_thread.join().unwrap_or_default();
 
     if !task.terminal_seen.load(Ordering::SeqCst) {
         let protocol_failure = protocol_error
             .lock()
             .expect("protocol error lock poisoned")
             .clone();
-        let (code, message, retryable, details) = if let Some(error) = protocol_failure {
-            (
-                "protocol_error",
-                error,
-                false,
-                Some(json!({"stderr": stderr_output.trim()})),
-            )
+        let details = || diagnostic_details(&stderr_output, stderr_truncated);
+        let (code, message, retryable, event_details) = if let Some(error) = protocol_failure {
+            ("protocol_error", error, false, details())
         } else if timed_out {
             (
                 "timeout",
                 format!("sidecar exceeded {} seconds", task.timeout_seconds),
                 true,
-                Some(json!({"stderr": stderr_output.trim()})),
+                details(),
             )
         } else if task.cancel_requested.load(Ordering::SeqCst) {
             (
                 "cancelled",
                 "sidecar task was cancelled".to_string(),
                 true,
-                Some(json!({"stderr": stderr_output.trim()})),
+                details(),
             )
         } else if let Some(status) = exit_status {
             if status.success() {
@@ -574,14 +597,14 @@ fn monitor_task(
                     "missing_terminal_event",
                     "sidecar exited successfully without a completed or failed event".to_string(),
                     false,
-                    Some(json!({"stderr": stderr_output.trim()})),
+                    details(),
                 )
             } else {
                 (
                     "process_exit",
                     format!("sidecar exited with status {status}"),
                     true,
-                    Some(json!({"stderr": stderr_output.trim()})),
+                    details(),
                 )
             }
         } else {
@@ -589,12 +612,19 @@ fn monitor_task(
                 "process_ended",
                 "sidecar process ended without a terminal event".to_string(),
                 true,
-                Some(json!({"stderr": stderr_output.trim()})),
+                details(),
             )
         };
         emit_event(
             &app,
-            synthetic_failed_event(&task, &request_id, code, message, retryable, details),
+            synthetic_failed_event(
+                &task,
+                &request_id,
+                code,
+                message,
+                retryable,
+                event_details,
+            ),
         );
     }
 
@@ -618,13 +648,15 @@ pub fn get_vault_sidecar_status() -> VaultSidecarStatus {
     };
     let entrypoint_available = entrypoint.is_file();
     let program_available = if entrypoint_available && launch_mode == "python-script" {
-        Command::new(&program)
+        let mut probe = Command::new(&program);
+        probe
             .arg("--version")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok()
+            .stderr(Stdio::null());
+        #[cfg(target_os = "windows")]
+        probe.creation_flags(CREATE_NO_WINDOW);
+        probe.status().is_ok()
     } else {
         entrypoint_available
     };
@@ -841,5 +873,13 @@ mod tests {
 
         let line = r#"{"protocol":"ai-session-vault-sidecar","protocol_version":1,"request_id":"request-1","sequence":1,"timestamp":"2026-07-24T00:00:00Z","operation":"sync","event":"progress","data":{}}"#;
         assert!(parse_sidecar_event(line, "request-1", "sync", Some(1)).is_err());
+    }
+
+    #[test]
+    fn diagnostic_output_is_bounded_and_annotated() {
+        let details = diagnostic_details("failure", true).unwrap();
+        assert_eq!(details["stderr"], "failure");
+        assert_eq!(details["stderr_truncated"], true);
+        assert!(diagnostic_details("", false).is_none());
     }
 }
