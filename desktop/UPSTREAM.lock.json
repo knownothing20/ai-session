@@ -1,0 +1,9 @@
+{
+  "repository": "jhlee0409/claude-code-history-viewer",
+  "source_url": "https://github.com/jhlee0409/claude-code-history-viewer",
+  "version": "v1.22.0",
+  "commit": "2e29912c8743c997f203e903e6ae0054865cb8e3",
+  "license": "MIT",
+  "integration": "vendored-monorepo",
+  "source_imported": false
+}
