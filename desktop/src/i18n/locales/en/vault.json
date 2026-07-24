@@ -1,0 +1,65 @@
+{
+  "vault": {
+    "menu": "Session Vault",
+    "title": "AI Session Vault",
+    "description": "Back up, verify, and safely restore local AI coding sessions without modifying active application data.",
+    "configuration": "Vault configuration",
+    "sidecarAvailable": "Vault Core available",
+    "sidecarUnavailable": "Vault Core unavailable",
+    "loadingApplications": "Discovering applications...",
+    "fields": {
+      "application": "Application",
+      "machineId": "Machine ID",
+      "vaultRoot": "Vault folder",
+      "sourceRoot": "Source override (optional)",
+      "restoreScope": "Restore scope",
+      "sessionId": "Session ID",
+      "restoreRoot": "New recovery folder"
+    },
+    "placeholders": {
+      "machineId": "e.g. leon-windows-main",
+      "sourceRoot": "Use the application's default storage path",
+      "sessionId": "Native Codex session UUID"
+    },
+    "actions": {
+      "inspect": "Inspect source",
+      "layout": "Preview layout",
+      "previewBackup": "Backup dry-run",
+      "backup": "Back up now",
+      "verify": "Verify Vault",
+      "previewRestore": "Restore dry-run",
+      "restore": "Create recovery copy",
+      "cancel": "Cancel task",
+      "close": "Close"
+    },
+    "restore": {
+      "title": "Isolated native recovery",
+      "unsupported": "The selected application does not support native restore",
+      "session": "One session",
+      "full": "Complete archive"
+    },
+    "task": {
+      "title": "Task and report",
+      "running": "Running {{operation}}",
+      "completed": "Operation completed",
+      "output": "Output",
+      "commandPreview": "Safe command preview",
+      "events": "Protocol events",
+      "noEvents": "No events yet",
+      "recent": "Recent tasks"
+    },
+    "errors": {
+      "unknown": "An unknown Vault error occurred",
+      "appRequired": "Select an application",
+      "vaultRequired": "Enter a Vault folder",
+      "restoreUnsupported": "The selected application does not support native restore",
+      "restoreRootRequired": "Enter a new recovery folder",
+      "sessionRequired": "Enter the native session ID for a single-session restore"
+    },
+    "confirm": {
+      "sync": "Start a real incremental backup? Active application data will remain read-only.",
+      "restore": "Create an isolated recovery directory? The destination must not already exist.",
+      "closeActive": "A Vault task is still running. Cancel it and close?"
+    }
+  }
+}
