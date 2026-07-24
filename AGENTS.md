@@ -43,18 +43,19 @@
 
 开发验证使用本地静态检查、本地单元测试和本地构建。
 
-## 阶段状态
+## 当前阶段
 
-阶段 0 已完成。下一次实际开发从阶段 1 开始：
+阶段 1 正在进行：
 
 ```text
 阶段 1 / 共 5 阶段：接入现有备份、校验和 Codex 恢复
 当前阶段完成后还剩 3 个阶段
-本次属于阶段 1 的第 1 个任务包
+当前任务包：阶段 1 的第 1 个任务包 — Sidecar 协议与调用骨架
 ```
 
 阶段 1 依据：
 
 - `docs/DEVELOPMENT_STAGE_STATUS.md`
 - `docs/PHASE_1_BACKUP_RESTORE_INTEGRATION.md`
+- `docs/SIDECAR_PROTOCOL_V1.md`
 - GitHub Issue #3
