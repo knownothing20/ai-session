@@ -27,13 +27,13 @@ Never put vendor-specific storage rules in the shared core.
 
 ## Product development baseline
 
-The complete implementation plan for the management UI, safe session modification, cross-machine handoff, reliability, normalized parsing, usage statistics, health checks and repair, global search, readable export, and AI analysis is:
+The next-stage implementation plan for the management UI, safe session modification, cross-machine handoff, reliability, normalized parsing, usage statistics, health checks and repair, global search, readable export, and AI analysis is:
 
 ```text
 docs/FULL_DEVELOPMENT_PLAN.md
 ```
 
-Use that document as the architecture and sequencing baseline before adding these product modules. The raw vendor archive remains immutable; search indexes, exports, AI analyses, statistics, and repair outputs are derived and rebuildable.
+Except for capabilities explicitly listed as the current v0.3 baseline, those roadmap modules are planned work and must not be described as already implemented. Use that document as the architecture and sequencing baseline. The raw vendor archive remains immutable; search indexes, exports, AI analyses, statistics, and repair outputs are derived and rebuildable.
 
 ## Supported applications
 
