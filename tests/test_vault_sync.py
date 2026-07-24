@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 import uuid
+from contextlib import closing
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,7 +45,7 @@ class VaultSyncTests(unittest.TestCase):
             json.dumps({"id": self.session_id, "thread_name": "test"}) + "\n",
             encoding="utf-8",
         )
-        with sqlite3.connect(self.source / "state_5.sqlite") as db:
+        with closing(sqlite3.connect(self.source / "state_5.sqlite")) as db:
             db.execute("create table threads(id text primary key, title text)")
             db.execute("insert into threads values (?, ?)", (self.session_id, "test"))
             db.commit()
@@ -80,7 +81,10 @@ class VaultSyncTests(unittest.TestCase):
         result = inspect_adapter(self.spec, self.vault, self.machine_id)
         self.assertEqual(result["session_files"], 1)
         self.assertEqual(result["machine_id"], self.machine_id)
-        self.assertTrue(result["planned_machine_root"].endswith("apps/codex/machines/test-machine"))
+        expected = vault_machine_root(
+            self.vault, "codex", "test-machine"
+        ).resolve()
+        self.assertEqual(Path(result["planned_machine_root"]).resolve(), expected)
 
     def test_initial_sync_repeat_append_duplicate_and_verify(self):
         first = sync_archive(self.spec, self.vault, self.machine_id)
