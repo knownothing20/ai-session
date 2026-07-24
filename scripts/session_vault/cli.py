@@ -178,6 +178,13 @@ def main(argv: list[str] | None = None) -> int:
             emitter.progress_callback() if emitter is not None else None,
         )
         if emitter is not None:
+            if options.mode == "verify" and result.get("ok") is False:
+                emitter.failed(
+                    "VERIFY_FAILED",
+                    f"Vault verification found {result.get('errors', 0)} integrity errors",
+                    details={"report": result},
+                )
+                return 3
             emitter.completed(result)
         else:
             _write_final(result, options.output_format)
