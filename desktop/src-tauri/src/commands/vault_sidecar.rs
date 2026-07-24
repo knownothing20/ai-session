@@ -1,3 +1,4 @@
+use chrono::SecondsFormat;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -5,10 +6,10 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter, State};
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -138,13 +139,14 @@ struct RunningTask {
 
 impl RunningTask {
     fn info(&self, request_id: &str) -> VaultSidecarTaskInfo {
+        let cancel_requested = self.cancel_requested.load(Ordering::SeqCst);
         VaultSidecarTaskInfo {
             request_id: request_id.to_string(),
             operation: self.operation.clone(),
             started_at: self.started_at.clone(),
             timeout_seconds: self.timeout_seconds,
-            cancel_requested: self.cancel_requested.load(Ordering::SeqCst),
-            status: if self.cancel_requested.load(Ordering::SeqCst) {
+            cancel_requested,
+            status: if cancel_requested {
                 "cancelling".to_string()
             } else {
                 "running".to_string()
@@ -153,9 +155,15 @@ impl RunningTask {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct VaultSidecarTaskState {
-    tasks: Arc<Mutex<HashMap<String, Arc<RunningTask>>>>,
+#[derive(Default)]
+struct TaskRegistry {
+    tasks: Mutex<HashMap<String, Arc<RunningTask>>>,
+}
+
+static TASK_REGISTRY: OnceLock<TaskRegistry> = OnceLock::new();
+
+fn task_registry() -> &'static TaskRegistry {
+    TASK_REGISTRY.get_or_init(TaskRegistry::default)
 }
 
 fn repository_root() -> PathBuf {
@@ -181,10 +189,7 @@ fn is_python_script(path: &Path) -> bool {
 }
 
 fn now_timestamp() -> String {
-    let duration = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    format!("{}.{:03}Z", duration.as_secs(), duration.subsec_millis())
+    chrono::Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
 fn validate_text(value: &str, label: &str) -> Result<(), String> {
@@ -297,6 +302,7 @@ fn build_command_preview(
     request: VaultSidecarRequest,
 ) -> Result<VaultSidecarCommandPreview, String> {
     validate_request(&request)?;
+    let timeout_seconds = resolved_timeout_seconds(&request)?;
     let entrypoint = sidecar_entrypoint();
     if !entrypoint.is_file() {
         return Err(format!(
@@ -355,7 +361,7 @@ fn build_command_preview(
         operation: request.operation,
         protocol: SIDECAR_PROTOCOL_NAME,
         protocol_version: SIDECAR_PROTOCOL_VERSION,
-        timeout_seconds: resolved_timeout_seconds(&request)?,
+        timeout_seconds,
     })
 }
 
@@ -433,7 +439,6 @@ fn emit_event(app: &AppHandle, event: VaultSidecarEvent) {
 
 fn monitor_task(
     app: AppHandle,
-    state: VaultSidecarTaskState,
     request_id: String,
     task: Arc<RunningTask>,
     stdout: impl Read + Send + 'static,
@@ -509,7 +514,7 @@ fn monitor_task(
             match child.try_wait() {
                 Ok(status) => exit_status = status,
                 Err(error) => {
-                    if !task.terminal_seen.swap(true, Ordering::SeqCst) {
+                    if !task.terminal_seen.load(Ordering::SeqCst) {
                         emit_event(
                             &app,
                             synthetic_failed_event(
@@ -593,7 +598,7 @@ fn monitor_task(
         );
     }
 
-    if let Ok(mut tasks) = state.tasks.lock() {
+    if let Ok(mut tasks) = task_registry().tasks.lock() {
         tasks.remove(&request_id);
     }
 }
@@ -658,13 +663,11 @@ pub fn preview_vault_sidecar_command(
 #[tauri::command]
 pub fn start_vault_sidecar_task(
     app: AppHandle,
-    state: State<'_, VaultSidecarTaskState>,
     request: VaultSidecarRequest,
 ) -> Result<VaultSidecarTaskStart, String> {
     let preview = build_command_preview(request)?;
-    let state = state.inner().clone();
     {
-        let tasks = state
+        let tasks = task_registry()
             .tasks
             .lock()
             .map_err(|_| "Vault task registry lock is poisoned".to_string())?;
@@ -707,7 +710,7 @@ pub fn start_vault_sidecar_task(
         last_sequence: AtomicU64::new(0),
     });
 
-    state
+    task_registry()
         .tasks
         .lock()
         .map_err(|_| "Vault task registry lock is poisoned".to_string())?
@@ -716,7 +719,7 @@ pub fn start_vault_sidecar_task(
     let request_id = preview.request_id.clone();
     let worker_request_id = request_id.clone();
     thread::spawn(move || {
-        monitor_task(app, state, worker_request_id, task, stdout, stderr);
+        monitor_task(app, worker_request_id, task, stdout, stderr);
     });
 
     Ok(VaultSidecarTaskStart {
@@ -728,12 +731,9 @@ pub fn start_vault_sidecar_task(
 }
 
 #[tauri::command]
-pub fn cancel_vault_sidecar_task(
-    state: State<'_, VaultSidecarTaskState>,
-    request_id: String,
-) -> Result<bool, String> {
+pub fn cancel_vault_sidecar_task(request_id: String) -> Result<bool, String> {
     validate_text(&request_id, "requestId")?;
-    let task = state
+    let task = task_registry()
         .tasks
         .lock()
         .map_err(|_| "Vault task registry lock is poisoned".to_string())?
@@ -752,10 +752,8 @@ pub fn cancel_vault_sidecar_task(
 }
 
 #[tauri::command]
-pub fn list_vault_sidecar_tasks(
-    state: State<'_, VaultSidecarTaskState>,
-) -> Result<Vec<VaultSidecarTaskInfo>, String> {
-    let tasks = state
+pub fn list_vault_sidecar_tasks() -> Result<Vec<VaultSidecarTaskInfo>, String> {
+    let tasks = task_registry()
         .tasks
         .lock()
         .map_err(|_| "Vault task registry lock is poisoned".to_string())?;
