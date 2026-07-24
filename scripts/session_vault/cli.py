@@ -15,7 +15,7 @@ from .core import (
     vault_machine_root,
     verify_archive,
 )
-from .protocol import PROTOCOL_VERSION, SidecarEmitter
+from .protocol import PROTOCOL_VERSION, ProgressCallback, SidecarEmitter, make_progress
 from .registry import build_adapter, list_adapters
 
 
@@ -64,9 +64,32 @@ def parser() -> argparse.ArgumentParser:
     return command
 
 
-def _execute(options: argparse.Namespace) -> dict:
+def _execute(
+    options: argparse.Namespace,
+    progress: ProgressCallback | None = None,
+) -> dict:
     if options.mode == "list-apps":
-        return {"adapters": list_adapters()}
+        if progress is not None:
+            progress(
+                make_progress(
+                    "discover",
+                    "Discovering supported Vault adapters",
+                    current=0,
+                    total=1,
+                )
+            )
+        adapters = list_adapters()
+        if progress is not None:
+            progress(
+                make_progress(
+                    "discover",
+                    "Adapter discovery complete",
+                    current=1,
+                    total=1,
+                    details={"adapter_count": len(adapters)},
+                )
+            )
+        return {"adapters": adapters}
 
     if not options.app:
         raise SyncError("--app is required unless --mode list-apps is used")
@@ -78,15 +101,21 @@ def _execute(options: argparse.Namespace) -> dict:
         else None
     )
     if options.mode == "inspect":
-        return inspect_adapter(spec, vault_root, machine_id)
+        return inspect_adapter(spec, vault_root, machine_id, progress)
     if options.mode == "layout":
         if vault_root is None:
             raise SyncError("--vault-root is required for layout")
-        return describe_layout(vault_root, spec.app_id, machine_id)
+        return describe_layout(vault_root, spec.app_id, machine_id, progress)
     if options.mode == "sync":
         if vault_root is None:
             raise SyncError("--vault-root is required for sync")
-        return sync_archive(spec, vault_root, machine_id, options.dry_run)
+        return sync_archive(
+            spec,
+            vault_root,
+            machine_id,
+            options.dry_run,
+            progress,
+        )
     if options.mode == "restore":
         if vault_root is None:
             raise SyncError("--vault-root is required for restore")
@@ -100,11 +129,12 @@ def _execute(options: argparse.Namespace) -> dict:
             options.restore_scope,
             options.session_id,
             options.dry_run,
+            progress,
         )
     if vault_root is None:
         raise SyncError("--vault-root is required for verify")
     root = vault_machine_root(vault_root, spec.app_id, machine_id)
-    return verify_archive(root)
+    return verify_archive(root, progress)
 
 
 def _started_data(options: argparse.Namespace) -> dict:
@@ -143,7 +173,10 @@ def main(argv: list[str] | None = None) -> int:
         emitter.started(_started_data(options))
 
     try:
-        result = _execute(options)
+        result = _execute(
+            options,
+            emitter.progress_callback() if emitter is not None else None,
+        )
         if emitter is not None:
             emitter.completed(result)
         else:
@@ -172,6 +205,10 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         if emitter is not None:
             emitter.failed("CANCELLED", "Operation cancelled by the caller", retryable=True)
+        return 130
+    except BrokenPipeError:
+        # The desktop bridge may close stdout after cancellation. Avoid emitting
+        # a traceback that could be mistaken for a second protocol result.
         return 130
     except Exception as exc:
         # Sidecar mode must always terminate with a parseable lifecycle event.
