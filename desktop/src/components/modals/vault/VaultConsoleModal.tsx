@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -40,6 +47,7 @@ import type {
   VaultSidecarEvent,
   VaultSidecarOperation,
   VaultSidecarProgress,
+  VaultSidecarRequest,
   VaultSidecarStatus,
   VaultTaskRecord,
 } from "@/types/vaultSidecar";
@@ -112,6 +120,30 @@ function progressPercent(progress: VaultSidecarProgress | null): number | null {
   return Math.max(0, Math.min(100, (progress.current / progress.total) * 100));
 }
 
+function applyTaskEvent(
+  records: VaultTaskRecord[],
+  event: VaultSidecarEvent,
+): VaultTaskRecord[] {
+  return records.map((record) => {
+    if (record.requestId !== event.request_id) return record;
+    const terminalStatus =
+      event.event === "completed"
+        ? "completed"
+        : event.event === "failed"
+          ? event.error?.code === "cancelled" || event.error?.code === "CANCELLED"
+            ? "cancelled"
+            : "failed"
+          : record.status;
+    return {
+      ...record,
+      status: terminalStatus,
+      events: [...record.events, event],
+      result: event.event === "completed" ? event.data : record.result,
+      error: event.event === "failed" ? event.error : record.error,
+    };
+  });
+}
+
 export function VaultConsoleModal({ isOpen, onClose }: VaultConsoleModalProps) {
   const { t } = useTranslation();
   const [config, setConfig] = useState<VaultConsoleConfig>(loadConfig);
@@ -139,7 +171,10 @@ export function VaultConsoleModal({ isOpen, onClose }: VaultConsoleModalProps) {
   const reportPath = extractReportPath(result);
 
   const updateConfig = useCallback(
-    <K extends keyof VaultConsoleConfig>(key: K, value: VaultConsoleConfig[K]) => {
+    (
+      key: keyof VaultConsoleConfig,
+      value: VaultConsoleConfig[keyof VaultConsoleConfig],
+    ) => {
       setConfig((current) => ({ ...current, [key]: value }));
     },
     [],
@@ -149,56 +184,70 @@ export function VaultConsoleModal({ isOpen, onClose }: VaultConsoleModalProps) {
     localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config));
   }, [config]);
 
-  const recordEvent = useCallback((event: VaultSidecarEvent) => {
-    const isDiscovery = event.request_id === discoveryRequestRef.current;
-    const isActive = event.request_id === activeRequestRef.current;
-    if (!isDiscovery && !isActive) return;
+  const recordEvent = useCallback(
+    (event: VaultSidecarEvent) => {
+      const isDiscovery = event.request_id === discoveryRequestRef.current;
+      const isActive = event.request_id === activeRequestRef.current;
+      if (!isDiscovery && !isActive) return;
 
-    if (isActive) {
-      setEvents((current) => [...current, event]);
-      if (event.event === "progress") {
-        setProgress(asProgress(event.data));
-      }
-      if (event.event === "completed") {
-        setResult(event.data ?? null);
-        setError(null);
-        setProgress(null);
-        setActiveRequestId(null);
-        setActiveOperation(null);
-        activeRequestRef.current = null;
-      }
-      if (event.event === "failed") {
-        setError(event.error ?? {
-          code: "unknown_error",
-          message: t("vault.errors.unknown"),
-          retryable: false,
-        });
-        setProgress(null);
-        setActiveRequestId(null);
-        setActiveOperation(null);
-        activeRequestRef.current = null;
-      }
-    }
+      setTasks((current) => applyTaskEvent(current, event));
 
-    if (isDiscovery && event.event === "completed" && isRecord(event.data)) {
-      const data = event.data as unknown as VaultListAppsResult;
-      if (Array.isArray(data.adapters)) {
-        setAdapters(data.adapters);
-        setConfig((current) => {
-          const selectedExists = data.adapters.some(
-            (adapter) => adapter.app_id === current.selectedAppId,
+      if (isActive) {
+        setEvents((current) => [...current, event]);
+        if (event.event === "progress") {
+          setProgress(asProgress(event.data));
+        }
+        if (event.event === "completed") {
+          setResult(event.data ?? null);
+          setError(null);
+          setProgress(null);
+          setActiveRequestId(null);
+          setActiveOperation(null);
+          activeRequestRef.current = null;
+        }
+        if (event.event === "failed") {
+          setError(
+            event.error ?? {
+              code: "unknown_error",
+              message: t("vault.errors.unknown"),
+              retryable: false,
+            },
           );
-          return selectedExists
-            ? current
-            : { ...current, selectedAppId: data.adapters[0]?.app_id ?? "" };
-        });
+          setProgress(null);
+          setActiveRequestId(null);
+          setActiveOperation(null);
+          activeRequestRef.current = null;
+        }
       }
-      discoveryRequestRef.current = null;
-    }
-    if (isDiscovery && event.event === "failed") {
-      discoveryRequestRef.current = null;
-    }
-  }, [t]);
+
+      if (isDiscovery && event.event === "completed" && isRecord(event.data)) {
+        const data = event.data as unknown as VaultListAppsResult;
+        if (Array.isArray(data.adapters)) {
+          setAdapters(data.adapters);
+          setConfig((current) => {
+            const selectedExists = data.adapters.some(
+              (adapter) => adapter.app_id === current.selectedAppId,
+            );
+            return selectedExists
+              ? current
+              : { ...current, selectedAppId: data.adapters[0]?.app_id ?? "" };
+          });
+        }
+        discoveryRequestRef.current = null;
+      }
+      if (isDiscovery && event.event === "failed") {
+        setError(
+          event.error ?? {
+            code: "discovery_failed",
+            message: t("vault.errors.unknown"),
+            retryable: true,
+          },
+        );
+        discoveryRequestRef.current = null;
+      }
+    },
+    [t],
+  );
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -214,15 +263,18 @@ export function VaultConsoleModal({ isOpen, onClose }: VaultConsoleModalProps) {
         setStatus(nextStatus);
         const running = await listVaultSidecarTasks();
         if (!disposed && running.length > 0) {
-          setTasks(
-            running.map((task) => ({
-              requestId: task.requestId,
-              operation: task.operation,
-              startedAt: task.startedAt,
-              status: "running",
-              events: [],
-            })),
-          );
+          const records = running.map((task) => ({
+            requestId: task.requestId,
+            operation: task.operation,
+            startedAt: task.startedAt,
+            status: "running" as const,
+            events: [],
+          }));
+          setTasks(records);
+          const first = running[0];
+          activeRequestRef.current = first.requestId;
+          setActiveRequestId(first.requestId);
+          setActiveOperation(first.operation);
         }
         if (nextStatus.available) {
           const discoveryId = requestId();
@@ -259,7 +311,7 @@ export function VaultConsoleModal({ isOpen, onClose }: VaultConsoleModalProps) {
       operation: VaultSidecarOperation,
       dryRun = false,
       explicitRequestId = requestId(),
-    ) => ({
+    ): VaultSidecarRequest => ({
       operation,
       appId: operation === "list-apps" ? undefined : config.selectedAppId,
       vaultRoot: config.vaultRoot.trim() || undefined,
@@ -342,7 +394,19 @@ export function VaultConsoleModal({ isOpen, onClose }: VaultConsoleModalProps) {
       } catch (nextError) {
         const message =
           nextError instanceof Error ? nextError.message : String(nextError);
-        setError({ code: "start_failed", message, retryable: true });
+        const startError: VaultSidecarError = {
+          code: "start_failed",
+          message,
+          retryable: true,
+        };
+        setError(startError);
+        setTasks((current) =>
+          current.map((task) =>
+            task.requestId === nextRequestId
+              ? { ...task, status: "failed", error: startError }
+              : task,
+          ),
+        );
         setActiveRequestId(null);
         setActiveOperation(null);
         activeRequestRef.current = null;
@@ -641,18 +705,19 @@ export function VaultConsoleModal({ isOpen, onClose }: VaultConsoleModalProps) {
                 {events.length === 0 ? (
                   <p className="text-muted-foreground">{t("vault.task.noEvents")}</p>
                 ) : (
-                  events.map((event) => (
-                    <div
-                      key={`${event.request_id}-${event.sequence}`}
-                      className="rounded bg-muted/60 px-2 py-1"
-                    >
-                      <span className="font-mono">#{event.sequence}</span>{" "}
-                      <span>{event.event}</span>
-                      {asProgress(event.data)?.message
-                        ? ` · ${asProgress(event.data)?.message}`
-                        : ""}
-                    </div>
-                  ))
+                  events.map((event) => {
+                    const eventProgress = asProgress(event.data);
+                    return (
+                      <div
+                        key={`${event.request_id}-${event.sequence}`}
+                        className="rounded bg-muted/60 px-2 py-1"
+                      >
+                        <span className="font-mono">#{event.sequence}</span>{" "}
+                        <span>{event.event}</span>
+                        {eventProgress?.message ? ` · ${eventProgress.message}` : ""}
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </details>
@@ -686,7 +751,7 @@ function Field({
   className = "",
 }: {
   label: string;
-  children: React.ReactNode;
+  children: ReactNode;
   className?: string;
 }) {
   return (
