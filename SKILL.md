@@ -1,13 +1,13 @@
 ---
 name: agent-session-vault-sync
-description: Inspect, incrementally archive, verify, and safely restore supported AI coding applications' native local sessions in a user-selected portable Agent Session Vault. Uses independent evidence-backed adapters, precise file patterns, stable app/machine folders, SQLite online snapshots, duplicate detection, conflict preservation, non-destructive synchronization, and capability-gated isolated restore. Use when the user asks to back up, migrate, synchronize, inspect, verify, restore, or extend support for coding-agent session history.
+description: Inspect, incrementally archive, verify, and safely restore common AI coding applications' native local sessions in a user-selected portable Agent Session Vault. Uses independent evidence-backed adapters, precise file patterns, stable app/machine folders, SQLite online snapshots, duplicate detection, conflict preservation, non-destructive synchronization, and capability-gated native restore. Use when the user asks to back up, migrate, synchronize, inspect, verify, restore, manage, search, repair, export, analyze, or extend support for coding-agent session history.
 ---
 
 # Agent Session Vault Sync
 
 ## Goal
 
-Archive a supported coding application's native session history to a user-selected internal disk, external disk, or mounted storage without modifying the source application. Where an adapter explicitly supports restore, recover into a new isolated application directory rather than overwriting the active installation.
+Archive a supported coding application's native session history to a user-selected internal disk, external disk, or mounted storage without modifying the source application, and provide evidence-backed isolated recovery where the adapter supports it.
 
 Use the deterministic helper:
 
@@ -20,9 +20,20 @@ Do not replace it with improvised copy commands. If it fails, report the exact f
 ## Architecture
 
 1. Independent adapters under `scripts/session_vault/adapters/` define one application's native source root, exact transcript/session-artifact patterns, SQLite files, indexes, exclusions, stable IDs, and optional restore strategy.
-2. The shared core performs vault initialization, folder creation, incremental synchronization, SHA-256 comparison, SQLite snapshots, conflict preservation, reports, locking, verification, and isolated restore.
+2. The shared core performs vault initialization, folder creation, incremental synchronization, SHA-256 comparison, SQLite snapshots, conflict preservation, reports, locking, and verification.
+3. The restore engine creates a new isolated application home and never writes into the active source directory by default.
 
-Never put vendor-specific storage or restore rules in the shared core without an adapter capability declaration.
+Never put vendor-specific storage rules in the shared core.
+
+## Product development baseline
+
+The complete implementation plan for the management UI, safe session modification, cross-machine handoff, reliability, normalized parsing, usage statistics, health checks and repair, global search, readable export, and AI analysis is:
+
+```text
+docs/FULL_DEVELOPMENT_PLAN.md
+```
+
+Use that document as the architecture and sequencing baseline before adding these product modules. The raw vendor archive remains immutable; search indexes, exports, AI analyses, statistics, and repair outputs are derived and rebuildable.
 
 ## Supported applications
 
@@ -49,9 +60,7 @@ Resolve:
 - `source_root`: optional native source override;
 - `machine_id`: optional stable human-readable machine ID;
 - `mode`: `inspect`, `layout`, `sync`, `verify`, `restore`, or `list-apps`;
-- `restore_root`: required new isolated directory for restore;
-- `restore_scope`: `session` or `full`;
-- `session_id`: required for single-session restore.
+- restore-only: `restore_root`, `restore_scope`, and optional `session_id`.
 
 Machine ID priority:
 
@@ -167,9 +176,9 @@ Do not report success unless verification returns `ok: true`.
 
 ## Codex isolated restore workflow
 
-Only use restore when the adapter reports a restore strategy. V0.3 supports Codex rollout backfill restore.
+Only adapters declaring a tested `restore_strategy` may use `--mode restore`. Codex currently supports isolated rollout backfill.
 
-### Single-session dry run
+Single-session dry run:
 
 ```bash
 python scripts/vault_sync.py \
@@ -179,15 +188,11 @@ python scripts/vault_sync.py \
   --session-id "<thread-uuid>" \
   --vault-root "<vault_root>" \
   --machine-id "<machine_id>" \
-  --restore-root "<new_restore_root>" \
+  --restore-root "<new-empty-path>" \
   --dry-run
 ```
 
-### Publish single-session restore
-
-Run the same command without `--dry-run` only after reviewing the plan.
-
-### Full isolated restore
+Full isolated restore:
 
 ```bash
 python scripts/vault_sync.py \
@@ -196,22 +201,23 @@ python scripts/vault_sync.py \
   --restore-scope full \
   --vault-root "<vault_root>" \
   --machine-id "<machine_id>" \
-  --restore-root "<new_restore_root>"
+  --restore-root "<new-empty-path>"
 ```
 
-Restore safety:
+Restore rules:
 
 - `restore_root` must not already exist;
-- it must be outside the active source directory and vault machine directory;
-- verify all selected archive hashes before writing;
-- publish through a temporary sibling directory and atomic rename;
-- never restore `auth.json`, tokens, caches, or old state SQLite automatically;
-- for single-session restore, move an archived rollout into the active `sessions/` tree;
-- let Codex create a fresh database and backfill metadata from rollout files;
-- generate Windows/POSIX launchers, marker, README, and `restore-report.json`;
-- never modify the active Codex directory or archive.
+- it must be outside both the active source and vault machine directory;
+- verify every selected archive hash before writing;
+- write to a temporary sibling and publish by atomic rename;
+- never restore `auth.json` or credentials;
+- never activate old state SQLite snapshots in the isolated restore;
+- let Codex create a fresh state DB and backfill from rollout files;
+- a single archived session is restored as active so it can be resumed;
+- create launchers and `restore-report.json`;
+- never claim success unless published output and report agree.
 
-Read `references/codex-restore.md` before changing restore behavior.
+See `references/codex-restore.md`.
 
 ## Transcript and artifact rules
 
@@ -251,21 +257,23 @@ Do not automatically delete or hard-link duplicate native files because vendor i
 
 Treat source storage as read-only. Never:
 
-- edit/rebuild source SQLite or indexes;
+- edit/rebuild source SQLite or indexes without an explicit capability-gated repair plan;
 - delete native sessions;
 - copy login credentials, API keys, token files, keychain exports or `.env` files;
 - copy logs, caches, runtime status, worktree sidecars, tool outputs or project source code unless an adapter explicitly proves they are required session artifacts.
 
-## Development validation policy
+## Development and testing policy
 
-Do not add or trigger GitHub Actions during active development unless the user explicitly requests it. Run validation manually:
+Development must not create or trigger GitHub Actions unless the user explicitly authorizes it.
+
+Use local checks:
 
 ```bash
 python -m compileall -q scripts tests
 python -m unittest discover -s tests -v
 ```
 
-Record the commands and results in the development report or PR description. Do not claim automatic CI coverage when no workflow is installed.
+Do not add files under `.github/workflows/`, rerun workflows, or use remote CI as a substitute for local validation. Destructive tests must use temporary HOME, source, vault, and restore directories.
 
 ## Adding or reviewing an adapter
 
@@ -273,29 +281,21 @@ Follow:
 
 - `references/adapter-contract.md`
 - `references/common-adapters.md`
+- `docs/FULL_DEVELOPMENT_PLAN.md` for future management, parsing, search, health, repair, export, usage, handoff, and AI capabilities
 
-Use upstream source code or official documentation as evidence. Add realistic sanitized tests for source-root resolution, precise file selection, stable IDs, repeated sync, append, conflict, duplicates, SQLite snapshots, verification, and any declared native restore strategy.
+Use upstream source code or official documentation as evidence. Add realistic sanitized tests for source-root resolution, precise file selection, stable IDs, repeated sync, append, conflict, duplicates, SQLite snapshots, verification, and restore when declared.
 
 Proprietary applications without a stable public storage contract must remain deferred until a read-only inventory from a real installation is available.
 
 ## Required result report
 
-After synchronization report:
+After synchronization or restore report:
 
 - adapter/app and machine ID;
-- source, vault, and exact machine folder;
-- session/artifact files scanned, copied and skipped;
+- source, vault, and exact target folder;
+- session/artifact files scanned, copied, skipped, selected, or restored;
 - duplicate-content and conflict counts;
-- metadata updated, skipped and failed;
+- metadata updated, skipped, failed, or deliberately excluded;
 - warnings;
-- verification result and report location.
-
-After restore report:
-
-- adapter/app, machine, scope, and session ID when applicable;
-- archive machine root and isolated restore root;
-- selected/restored session count;
-- restored indexes and skipped SQLite snapshots;
-- activated archived session count;
-- launchers and report path;
-- warnings and first-launch database rebuild requirement.
+- verification result;
+- report location.
