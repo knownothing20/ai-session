@@ -12,6 +12,7 @@ pub mod settings;
 pub mod stats;
 pub mod unified_presets;
 pub mod update;
+pub mod vault_sidecar;
 pub mod watcher;
 pub mod wsl;
 
