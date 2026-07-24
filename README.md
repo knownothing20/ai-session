@@ -20,11 +20,11 @@ It separates three responsibilities:
 
 ## Product development plan
 
-The complete roadmap for the management UI, safe session modification, cross-machine handoff, backup/repair/restore reliability, normalized multi-source parsing, usage statistics, health checks, global search, readable export, and AI analysis is documented in:
+The desktop product will **not** be built from scratch. The revised V2.0 roadmap uses the MIT-licensed `jhlee0409/claude-code-history-viewer` as the Tauri/React/Rust desktop, provider, search, statistics, and export base. This repository remains the high-reliability Vault Core for backup, verification, Doctor, Repair, Restore, and cross-machine Handoff.
 
-- [Full development plan](docs/FULL_DEVELOPMENT_PLAN.md)
+- [Open-source-based full development plan](docs/FULL_DEVELOPMENT_PLAN.md)
 
-This is the next-stage implementation plan, not a claim that all roadmap modules are already complete. The document includes quick navigation, target architecture, normalized data model, adapter capability contract, local API, UI pages, security rules, tests, acceptance criteria, priorities, and phased implementation order.
+The plan defines a two-repository architecture, CCHV upstream synchronization rules, Python Sidecar integration, license boundaries, source safety, and five implementation stages. It is planned work, not a claim that the desktop integration, repair, handoff, or AI modules are already complete.
 
 ## Supported adapters
 
