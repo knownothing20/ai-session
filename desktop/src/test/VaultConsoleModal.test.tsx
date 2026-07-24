@@ -4,22 +4,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
 import type { VaultSidecarEvent } from "@/types/vaultSidecar";
 
-const getStatus = vi.fn();
-const listTasks = vi.fn();
-const startTask = vi.fn();
-const previewCommand = vi.fn();
-const cancelTask = vi.fn();
-let eventHandler: ((event: VaultSidecarEvent) => void) | null = null;
+const mocks = vi.hoisted(() => ({
+  getStatus: vi.fn(),
+  listTasks: vi.fn(),
+  startTask: vi.fn(),
+  previewCommand: vi.fn(),
+  cancelTask: vi.fn(),
+  eventHandler: null as ((event: VaultSidecarEvent) => void) | null,
+}));
 
 vi.mock("@/services/vaultSidecarApi", () => ({
-  getVaultSidecarStatus: (...args: unknown[]) => getStatus(...args),
-  listVaultSidecarTasks: (...args: unknown[]) => listTasks(...args),
-  startVaultSidecarTask: (...args: unknown[]) => startTask(...args),
-  previewVaultSidecarCommand: (...args: unknown[]) => previewCommand(...args),
-  cancelVaultSidecarTask: (...args: unknown[]) => cancelTask(...args),
+  getVaultSidecarStatus: mocks.getStatus,
+  listVaultSidecarTasks: mocks.listTasks,
+  startVaultSidecarTask: mocks.startTask,
+  previewVaultSidecarCommand: mocks.previewCommand,
+  cancelVaultSidecarTask: mocks.cancelTask,
   listenVaultSidecarEvents: vi.fn(
     async (handler: (event: VaultSidecarEvent) => void) => {
-      eventHandler = handler;
+      mocks.eventHandler = handler;
       return vi.fn();
     },
   ),
@@ -28,14 +30,14 @@ vi.mock("@/services/vaultSidecarApi", () => ({
 import { VaultConsoleModal } from "@/components/modals/vault/VaultConsoleModal";
 
 beforeEach(() => {
-  eventHandler = null;
-  getStatus.mockReset();
-  listTasks.mockReset();
-  startTask.mockReset();
-  previewCommand.mockReset();
-  cancelTask.mockReset();
+  mocks.eventHandler = null;
+  mocks.getStatus.mockReset();
+  mocks.listTasks.mockReset();
+  mocks.startTask.mockReset();
+  mocks.previewCommand.mockReset();
+  mocks.cancelTask.mockReset();
 
-  getStatus.mockResolvedValue({
+  mocks.getStatus.mockResolvedValue({
     available: true,
     protocol: "ai-session-vault-sidecar",
     protocolVersion: 1,
@@ -44,14 +46,14 @@ beforeEach(() => {
     launchMode: "python-script",
     reason: null,
   });
-  listTasks.mockResolvedValue([]);
-  startTask.mockImplementation(async (request) => ({
+  mocks.listTasks.mockResolvedValue([]);
+  mocks.startTask.mockImplementation(async (request) => ({
     requestId: request.requestId,
     operation: request.operation,
     timeoutSeconds: request.timeoutSeconds ?? 120,
     startedAt: "2026-07-24T00:00:00Z",
   }));
-  previewCommand.mockImplementation(async (request) => ({
+  mocks.previewCommand.mockImplementation(async (request) => ({
     program: "python",
     args: ["vault_sync.py", "--mode", request.operation],
     requestId: request.requestId,
@@ -67,15 +69,15 @@ describe("VaultConsoleModal", () => {
     render(<VaultConsoleModal isOpen={true} onClose={vi.fn()} />);
 
     await waitFor(() => {
-      expect(startTask).toHaveBeenCalledWith(
+      expect(mocks.startTask).toHaveBeenCalledWith(
         expect.objectContaining({ operation: "list-apps" }),
       );
     });
-    expect(eventHandler).not.toBeNull();
+    expect(mocks.eventHandler).not.toBeNull();
 
-    const discoveryRequest = startTask.mock.calls[0][0];
+    const discoveryRequest = mocks.startTask.mock.calls[0][0];
     await act(async () => {
-      eventHandler?.({
+      mocks.eventHandler?.({
         protocol: "ai-session-vault-sidecar",
         protocol_version: 1,
         request_id: discoveryRequest.requestId,
@@ -104,7 +106,7 @@ describe("VaultConsoleModal", () => {
     fireEvent.click(screen.getByRole("button", { name: "Backup dry-run" }));
 
     await waitFor(() => {
-      expect(previewCommand).toHaveBeenCalledWith(
+      expect(mocks.previewCommand).toHaveBeenCalledWith(
         expect.objectContaining({
           operation: "sync",
           appId: "codex",
@@ -113,7 +115,7 @@ describe("VaultConsoleModal", () => {
         }),
       );
     });
-    expect(startTask).toHaveBeenLastCalledWith(
+    expect(mocks.startTask).toHaveBeenLastCalledWith(
       expect.objectContaining({ operation: "sync", dryRun: true }),
     );
   });
