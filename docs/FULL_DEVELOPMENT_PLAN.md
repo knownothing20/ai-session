@@ -1,59 +1,110 @@
-# AI Coding Session Vault — 完整开发方案
+# AI Coding Session Vault — 基于开源底座的完整开发方案
 
-> 文档状态：V1.0
+> 文档状态：V2.0
 >
-> 对应代码基线：Agent Session Vault Sync v0.3
+> 对应现有代码基线：Agent Session Vault Sync v0.3
 >
-> 目标：在现有多软件备份、校验与 Codex 隔离恢复能力之上，建设一个本地优先、可搜索、可管理、可修复、可交接、可统计、可分析的 AI 编程会话保险箱。
+> 桌面软件基线：`jhlee0409/claude-code-history-viewer` v1.22.0，基准提交 `2e29912c8743c997f203e903e6ae0054865cb8e3`
 >
-> 说明：本文定义的是下一阶段完整产品和工程方案；除“当前基线”明确列出的能力外，其余模块仍属于待开发范围。
-
-## 快速导航
-
-- [当前基线](#3-当前基线)
-- [总体架构](#5-总体架构)
-- [标准化数据模型](#7-标准化数据模型)
-- [会话管理界面](#9-功能模块一会话管理界面)
-- [修改会话](#10-功能模块二修改会话)
-- [跨电脑交接](#11-功能模块三跨电脑交接)
-- [备份修复恢复可靠性](#12-功能模块四备份修复和恢复可靠性)
-- [多数据源解析与使用量统计](#13-功能模块五多数据源解析与使用量统计)
-- [健康检查和修复](#14-功能模块六会话健康检查和修复)
-- [全局搜索与查看](#15-功能模块七全局搜索与查看)
-- [可读导出](#16-功能模块八导出成可读文件)
-- [AI 分析](#17-功能模块九ai-分析)
-- [本地 API](#18-本地-api-设计)
-- [分期开发计划](#25-分期开发计划)
-- [优先级矩阵](#26-优先级矩阵)
+> 目标：不再从零开发会话管理软件，而是在成熟 MIT 开源桌面应用之上，接入现有 Vault Core，形成一个本地优先、可备份、可搜索、可管理、可修复、可交接、可统计、可分析的 AI 编程会话保险箱。
+>
+> 说明：本文定义下一阶段产品与工程方案。除“当前已实现”明确列出的能力外，其余内容属于待开发范围。
 
 ---
 
-## 1. 文档目的
+## 快速导航
 
-本文是后续产品和工程开发的统一基线，覆盖以下九项能力：
+- [1. 决策摘要](#1-决策摘要)
+- [2. 产品定位](#2-产品定位)
+- [3. 当前已实现](#3-当前已实现)
+- [4. 开源底座评估](#4-开源底座评估)
+- [5. 复用、修改与新增边界](#5-复用修改与新增边界)
+- [6. 最终架构](#6-最终架构)
+- [7. 仓库与上游同步策略](#7-仓库与上游同步策略)
+- [8. 数据与安全原则](#8-数据与安全原则)
+- [9. 桌面软件功能](#9-桌面软件功能)
+- [10. Vault Core 接入协议](#10-vault-core-接入协议)
+- [11. 会话管理和修改](#11-会话管理和修改)
+- [12. 备份、校验和恢复](#12-备份校验和恢复)
+- [13. 健康检查和修复](#13-健康检查和修复)
+- [14. 跨电脑交接](#14-跨电脑交接)
+- [15. 搜索、查看和导出](#15-搜索查看和导出)
+- [16. 使用量统计](#16-使用量统计)
+- [17. AI 分析](#17-ai-分析)
+- [18. UI 信息架构](#18-ui-信息架构)
+- [19. 数据模型](#19-数据模型)
+- [20. 测试与验收](#20-测试与验收)
+- [21. 五阶段开发计划](#21-五阶段开发计划)
+- [22. 首个可用版本](#22-首个可用版本)
+- [23. 风险与控制](#23-风险与控制)
+- [24. Definition of Done](#24-definition-of-done)
 
-1. 会话管理界面；
-2. 修改会话；
-3. 跨电脑交接；
-4. 备份、修复和恢复可靠性；
-5. 多数据源解析和使用量统计；
-6. 会话健康检查和修复；
-7. 全局搜索和查看；
-8. 导出成可读文件；
-9. AI 分析。
+---
 
-本文同时定义：
+## 1. 决策摘要
 
-- 产品边界；
-- 总体架构；
-- 标准数据模型；
-- 适配器扩展协议；
-- UI 页面和交互；
-- 本地 API；
-- 安全与隐私规则；
-- 测试和验收标准；
-- 分期开发顺序；
-- 迁移和兼容策略。
+### 1.1 核心决策
+
+不再从零开发：
+
+- 桌面程序外壳；
+- 会话列表和详情页；
+- 多软件 Provider；
+- 全局搜索界面；
+- Token 和成本统计界面；
+- HTML/JSON 导出框架；
+- Windows/macOS/Linux 打包；
+- 国际化和中文界面。
+
+以上能力以 `claude-code-history-viewer`（以下简称 CCHV）为桌面软件基础。
+
+现有 `ai-session` 继续承担：
+
+- 增量备份；
+- SHA-256 校验；
+- 冲突版本保留；
+- SQLite 一致快照；
+- 多电脑隔离；
+- 备份验证；
+- Codex 单会话和整库隔离恢复；
+- 后续 Doctor、Repair、Handoff 等高可靠能力。
+
+### 1.2 最终产品形态
+
+```text
+AI Session Vault Desktop
+│
+├── CCHV 派生桌面应用
+│   ├── Tauri 2
+│   ├── React + TypeScript
+│   ├── Rust Provider 层
+│   ├── 会话浏览、搜索、统计、导出
+│   └── Windows/macOS/Linux 软件外壳
+│
+├── Vault Core Sidecar
+│   ├── Python v0.3 现有核心
+│   ├── sync / verify / restore
+│   ├── doctor / repair / rollback
+│   ├── handoff / import
+│   └── JSONL 任务事件协议
+│
+└── 本地数据
+    ├── 厂商原生会话
+    ├── AgentSessionVault
+    ├── 应用元数据数据库
+    ├── 修复副本与审计记录
+    └── AI 派生分析
+```
+
+### 1.3 阶段数量
+
+采用 **5 个阶段**，从阶段 0 到阶段 4：
+
+1. 开源底座导入与基线稳定；
+2. 接入现有备份、校验和 Codex 恢复；
+3. 健康检查、安全修复和会话管理增强；
+4. 导出、跨电脑交接和 Vault 搜索增强；
+5. 统一统计、AI 分析和产品化完善。
 
 ---
 
@@ -61,1857 +112,633 @@
 
 ### 2.1 一句话定位
 
-**AI Coding Session Vault 是一个跨 AI 编程工具的本地会话保险箱，用于保存、搜索、查看、管理、修复、导出和恢复原生会话。**
+**AI Session Vault 是一个跨 AI 编程工具的本地会话保险箱，用于查看、搜索、管理、备份、修复、导出、交接和恢复原生会话。**
 
-### 2.2 核心用户
+### 2.2 与普通查看器的差异
 
-- 同时使用 Codex、Claude Code、Gemini CLI、Qwen Code、Kimi CLI、OpenCode 等工具的个人开发者；
-- 需要跨 Windows、Linux、WSL、远程服务器继续工作的用户；
-- 需要保存开发决策、命令、错误处理过程和 AI 输出的项目负责人；
-- 担心软件升级、索引损坏、会话清理或电脑迁移导致聊天记录丢失的用户；
-- 需要统计不同 AI 工具和模型使用量的重度用户。
-
-### 2.3 产品差异化
-
-本项目不只做查看器，也不只做复制脚本。核心差异是：
+CCHV 解决“看得见”，本项目重点补足“保得住、修得好、带得走、能恢复”。
 
 ```text
-多软件原生数据发现
-+ 不破坏源文件的增量备份
-+ 可重建的统一目录和全文索引
-+ 会话健康检查与安全修复
-+ 跨电脑可移植交接
-+ 原生恢复能力
-+ 多格式导出
-+ 可追溯的 AI 分析
+CCHV
+= 多工具查看 + 搜索 + 统计 + 导出
+
+AI Session Vault
+= CCHV 能力
++ 可验证备份
++ 版本与冲突保护
++ 会话健康检查
++ 安全修复与回滚
++ 原生恢复
++ 跨电脑交接
++ 隐私可控 AI 分析
 ```
 
-### 2.4 明确不做
+### 2.3 核心用户
 
-现阶段不做：
+- 同时使用 Codex、Claude Code、Gemini CLI、Qwen Code、Kimi、OpenCode、Goose 等工具的开发者；
+- 在 Windows、WSL、Linux、远程服务器之间切换工作的用户；
+- 担心升级、索引损坏、清理策略或电脑迁移导致会话丢失的用户；
+- 需要保存技术决策、错误排查过程和工具调用记录的项目负责人；
+- 需要统计不同工具、项目和模型使用量的重度用户。
 
-- 云端账号和云同步平台；
-- 实时远程控制 AI Agent；
-- 多 Agent 调度和任务编排；
-- 默认修改厂商原始聊天正文；
-- 默认删除源软件会话；
-- 自动上传会话到第三方服务；
-- 未经明确授权创建或触发 GitHub Actions；
-- 把推测路径当作已支持适配器。
+### 2.4 不做的事情
+
+首期不做：
+
+- 云端账号体系；
+- 公网托管会话；
+- 团队 RBAC；
+- 实时多人协作；
+- 自动永久删除；
+- 未经验证直接写厂商数据库；
+- 为开发测试创建或运行 GitHub Actions。
 
 ---
 
-## 3. 当前基线
+## 3. 当前已实现
 
-现有 v0.3 已经具备：
+当前 `ai-session` v0.3 已实现：
 
-- 独立适配器自动发现；
-- Codex、Claude Code、Gemini CLI、Qwen Code、Kimi CLI 文件级会话备份；
-- OpenCode、Goose、Hermes Agent SQLite 快照；
-- Aider 项目滚动历史备份；
-- SHA-256 去重；
-- 会话继续增长识别；
-- 内容分叉冲突保留；
-- SQLite Backup API 快照与 `PRAGMA quick_check`；
-- 稳定的 `apps/<app_id>/machines/<machine_id>/` 文件夹结构；
-- Codex 单会话和整库隔离恢复；
-- 本地手动测试；
-- 不复制认证文件和 Token。
+### 3.1 适配器
 
-现有实现适合作为“原始档案层”，但缺少：
+- Codex；
+- Claude Code；
+- Gemini CLI；
+- Qwen Code；
+- Kimi CLI；
+- OpenCode；
+- Goose；
+- Hermes Agent；
+- Aider。
 
-- 统一解析后的会话目录；
-- 跨软件全文搜索；
-- 图形界面；
-- Vault 自有标题、标签、收藏和备注；
-- 通用健康检查和修复框架；
-- 交接包；
-- 使用量统计；
-- 可读导出；
-- AI 派生分析。
+### 3.2 备份核心
 
----
+- 按应用和电脑隔离；
+- 增量扫描；
+- 未变化文件跳过；
+- SHA-256 内容校验；
+- 会话增长检测；
+- 分叉冲突版本保留；
+- SQLite Backup API；
+- SQLite `PRAGMA quick_check`；
+- manifest 和同步报告；
+- 不因源文件删除而删除备份；
+- 排除凭据、OAuth、日志和缓存。
 
-## 4. 设计原则
+### 3.3 恢复
 
-### 4.1 原始数据不可变
+Codex 已支持：
 
-Vault 中的原始厂商文件是证据和恢复源：
+- 单会话隔离恢复；
+- 全部会话隔离恢复；
+- 已归档单会话激活；
+- 不复用旧状态数据库；
+- 由 Codex 从 rollout JSONL 重建 SQLite；
+- Windows 和 POSIX 启动脚本；
+- 恢复报告和哈希验证。
 
-- 默认只读；
-- 不直接编辑；
-- 不因索引重建而删除；
-- 不因源文件消失而自动删除；
-- 每个版本都有哈希；
-- 修复结果写入新版本或隔离目录。
+### 3.4 尚未实现
 
-### 4.2 派生数据可重建
+以下属于新方案待开发：
 
-以下内容都属于派生数据：
-
-- 统一会话目录；
-- 全文搜索索引；
-- 用量统计；
-- AI 摘要；
-- 导出文件；
-- 缩略预览；
-- 健康检查报告。
-
-派生数据损坏后，必须能根据原始档案重新生成。
-
-### 4.3 修改必须分层
-
-“修改会话”分成三层：
-
-1. **Vault 元数据修改**：标题、标签、收藏、备注、项目归类，可直接修改；
-2. **派生副本修改**：清理后的 Markdown、修复后的会话副本、AI 摘要，可修改并保留版本；
-3. **原生应用修改**：原生重命名、归档、恢复，仅当适配器明确声明能力时允许，必须先预览并支持回滚。
-
-任何功能都不能把“编辑 Vault 标题”等同于直接篡改原始 JSONL。
-
-### 4.4 本地优先
-
-- 默认仅访问本地文件；
-- Web 服务只监听 `127.0.0.1`；
-- AI 分析默认关闭远程上传；
-- 远程模型必须显式启用；
-- 远程分析前提供脱敏预览；
-- API Key 存储与会话 Vault 分离。
-
-### 4.5 能力声明而不是猜测
-
-每个适配器需要声明自己支持的能力，例如：
-
-```text
-discover
-archive
-parse
-usage
-health
-repair
-native_rename
-native_archive
-native_restore
-handoff
-```
-
-核心和 UI 根据能力显示按钮，不能对所有软件显示不可用的操作。
-
-### 4.6 开发期间不使用 GitHub Actions
-
-- 不新增 `.github/workflows/`；
-- 不自动触发 push 或 PR Workflow；
-- 使用本地静态检查、单元测试和临时目录集成测试；
-- 需要远端 CI 时必须另行获得明确授权。
+- 桌面软件集成；
+- Vault 任务进度界面；
+- 通用 Doctor；
+- Repair 和回滚；
+- `.asvpack` 交接；
+- Vault 自有标签和备注；
+- Vault 备份内容的统一桌面搜索；
+- Markdown/PDF 增强导出；
+- AI 分析；
+- 更多软件原生恢复。
 
 ---
 
-## 5. 总体架构
+## 4. 开源底座评估
 
-### 5.1 分层架构
+## 4.1 主底座：Claude Code History Viewer
 
-```mermaid
-flowchart TB
-    A[厂商原生会话文件/SQLite] --> B[应用适配器层]
-    B --> C[原始档案层 Raw Vault]
-    B --> D[标准解析层 Normalizer]
-    C --> E[统一目录 Catalog]
-    D --> E
-    E --> F[全文搜索与统计]
-    E --> G[健康检查与修复]
-    E --> H[导出与跨电脑交接]
-    E --> I[AI 分析]
-    F --> J[本地 API]
-    G --> J
-    H --> J
-    I --> J
-    J --> K[浏览器管理界面]
-```
-
-### 5.2 推荐技术栈
-
-#### 后端
-
-- Python 3.10+；
-- FastAPI；
-- Pydantic；
-- SQLite；
-- SQLite FTS5；
-- Uvicorn；
-- 继续保留现有 CLI；
-- 所有核心功能先实现为 Python 服务层，CLI 和 Web API 共用。
-
-#### 前端
-
-推荐：
-
-- React + TypeScript + Vite；
-- TanStack Query；
-- 虚拟列表，用于长会话和大量搜索结果；
-- 图表使用轻量图表库；
-- 前端构建产物提交为静态资源，最终用户不需要安装 Node.js。
-
-后续可使用 Tauri 封装桌面版，但第一阶段以本地 Web UI 为主。
-
-### 5.3 目标代码结构
+基准：
 
 ```text
-scripts/
-  vault_sync.py                  # 兼容 CLI 入口
-
-src/session_vault/
-  adapters/                      # 厂商适配器
-  archive/                       # 原始备份和版本管理
-  catalog/                       # 统一目录与数据库迁移
-  parsers/                       # 标准化解析
-  search/                        # FTS 与查询
-  health/                        # 检查器
-  repairs/                       # 修复计划和执行器
-  restore/                       # 原生恢复
-  handoff/                       # 跨电脑交接包
-  exports/                       # Markdown/HTML/JSON 导出
-  usage/                         # Token、模型、成本统计
-  analysis/                      # AI 分析任务
-  api/                           # FastAPI 路由
-  services/                      # 用例服务层
-  security/                      # 脱敏、密钥扫描、路径安全
-  cli/                           # CLI 命令
-
-web/
-  src/
-    pages/
-    components/
-    api/
-    stores/
-  dist/                          # 发布时的静态资源
-
-tests/
-  fixtures/
-  unit/
-  integration/
-  restore/
-  repair/
-
-docs/
+仓库：jhlee0409/claude-code-history-viewer
+版本：1.22.0
+提交：2e29912c8743c997f203e903e6ae0054865cb8e3
+许可证：MIT
 ```
 
-为了兼容现有仓库，可以分阶段迁移，不要求一次性移动全部模块。
+### 可直接复用
+
+- Tauri 桌面框架；
+- React + TypeScript 前端；
+- Rust 后端；
+- Windows、macOS、Linux 打包；
+- 桌面模式和 Headless Server 模式；
+- 多 Provider 检测和解析；
+- 会话树、会话列表和详情；
+- 工具调用、推理和代码内容渲染；
+- 全局搜索；
+- 实时文件监听；
+- Token 和成本统计；
+- HTML、JSON 导出；
+- 中文国际化；
+- 长会话虚拟滚动；
+- Codex 原生重命名和删除的现有实现参考。
+
+### 当前 Provider 覆盖
+
+CCHV 已有 Provider 架构，可覆盖或参考：
+
+- Claude Code；
+- Codex；
+- Gemini；
+- Cursor / Cursor Agent；
+- Cline / Roo / Kilo；
+- Aider；
+- OpenCode；
+- Kimi；
+- Qwen；
+- Goose；
+- Continue；
+- Trae；
+- 其他多种工具。
+
+因此不再在 Python 中重复实现一套完整的“展示解析器”。
+
+## 4.2 使用量参考：ccusage
+
+可借鉴：
+
+- daily / monthly / session 聚合；
+- input / output / cache token；
+- 按模型拆分；
+- 项目过滤；
+- 成本估算；
+- 离线价格缓存；
+- JSON 输出；
+- 实际值和估算值区分。
+
+允许借鉴或复用 MIT 代码，但必须保留相应版权和许可证声明。
+
+## 4.3 安全交互参考：Codex Manager
+
+只借鉴设计，不复制 GPL-3.0 代码：
+
+```text
+预览 Diff
+→ 创建备份
+→ 原子写入
+→ 重新校验
+→ 可恢复旧版本
+```
+
+除非未来明确决定整个派生作品采用 GPL-3.0，否则不得将其 GPL 代码复制进项目。
+
+## 4.4 许可证要求
+
+### CCHV 和 ccusage
+
+- MIT；
+- 可以修改和再发布；
+- 必须保留原版权声明和许可证；
+- 新增 `THIRD_PARTY_NOTICES.md`；
+- 应在“关于”页面显示上游项目和许可证。
+
+### 厂商格式代码
+
+- 只使用公开源码或官方文档确认路径和格式；
+- 不复制不兼容许可证代码；
+- 反向工程 Provider 必须标记为 experimental；
+- 不把推测路径标记为稳定支持。
 
 ---
 
-## 6. Vault 文件结构升级
+## 5. 复用、修改与新增边界
 
-保留现有原始结构，并增加可重建目录：
-
-```text
-AgentSessionVault/
-├── vault.json
-├── apps/
-│   └── <app_id>/machines/<machine_id>/
-│       ├── native/
-│       ├── metadata/
-│       ├── conflicts/
-│       ├── reports/
-│       └── manifest.json
-├── catalog/
-│   ├── catalog.db
-│   ├── schema.json
-│   └── rebuild-state.json
-├── derived/
-│   ├── exports/
-│   ├── analysis/
-│   ├── previews/
-│   └── repair-plans/
-├── handoff/
-│   ├── packages/
-│   └── imports/
-├── quarantine/
-├── logs/
-└── settings.json
-```
-
-规则：
-
-- `apps/` 是不可随意修改的原始档案；
-- `catalog/` 可删除后重建；
-- `derived/` 可删除后重建；
-- `handoff/` 是用户主动生成的交接包；
-- `quarantine/` 保存修复前副本和软删除内容；
-- `settings.json` 不保存明文 API Key。
+| 能力 | 处理方式 | 说明 |
+|---|---|---|
+| 桌面外壳 | 直接复用 | Tauri、React、设置、更新提示等 |
+| Provider 解析 | 以 CCHV 为主 | Rust Provider 是展示和统计的主要解析层 |
+| 会话查看 | 直接复用并改中文体验 | 增加 Vault 来源和健康标记 |
+| 全局搜索 | 复用并扩展 | 同时搜索原生来源和 Vault 来源 |
+| Token 统计 | 复用并统一口径 | 增加数据质量标签 |
+| HTML/JSON 导出 | 复用 | 新增 Markdown、PDF 和 Handoff |
+| 实时监听 | 复用 | 仅监听，不替代可靠备份 |
+| 增量备份 | 使用现有 Vault Core | 不重写为简单文件复制 |
+| SQLite 快照 | 使用现有 Vault Core | 保持 Backup API 和校验 |
+| Codex 恢复 | 使用现有 Vault Core | 通过 Sidecar 暴露给 UI |
+| Doctor/Repair | 新开发 | 优先 Python，逐步迁移 Rust |
+| 跨电脑交接 | 新开发 | `.asvpack` |
+| AI 分析 | 新开发 | 本地优先、引用可追踪 |
+| 原生修改 | 能力门控 | 每个 Provider 独立声明支持范围 |
 
 ---
 
-## 7. 标准化数据模型
+## 6. 最终架构
 
-### 7.1 统一会话对象
+## 6.1 分层
 
-```python
-class NormalizedSession:
-    session_uid: str
-    app_id: str
-    machine_id: str
-    native_session_id: str
-    project_uid: str | None
-    title_native: str | None
-    title_vault: str | None
-    cwd_original: str | None
-    repository_url: str | None
-    git_branch: str | None
-    git_commit: str | None
-    model_ids: list[str]
-    provider_ids: list[str]
-    started_at: datetime | None
-    updated_at: datetime | None
-    archived_native: bool | None
-    health_status: str
-    source_version: int
-    source_hash: str
-    parser_version: str
-```
+### A. Desktop Shell
 
-`session_uid` 由以下内容稳定生成：
+职责：
+
+- 软件窗口；
+- 页面路由；
+- Provider 视图；
+- 任务中心；
+- 设置；
+- 进度与通知；
+- 调用 Tauri Command；
+- 启动 Sidecar。
+
+技术：
 
 ```text
-app_id + machine_id + native_session_id
+Tauri 2
+React 19
+TypeScript
+Vite
+Rust
 ```
 
-### 7.2 统一消息对象
+### B. Provider Layer
 
-```python
-class NormalizedMessage:
-    message_uid: str
-    session_uid: str
-    native_message_id: str | None
-    parent_message_uid: str | None
-    sequence: int
-    role: str
-    message_type: str
-    text_content: str | None
-    raw_content_json: str | None
-    created_at: datetime | None
-    model_id: str | None
-    input_tokens: int | None
-    output_tokens: int | None
-    cached_tokens: int | None
-    reasoning_tokens: int | None
-```
+职责：
 
-### 7.3 工具调用对象
+- 发现厂商原生存储；
+- 解析会话、消息、工具调用和 Usage；
+- 向 UI 提供统一读取结构；
+- 提供 Provider 能力声明。
 
-```python
-class NormalizedToolCall:
-    tool_call_uid: str
-    session_uid: str
-    message_uid: str | None
-    native_tool_call_id: str | None
-    tool_name: str
-    arguments_json: str | None
-    result_text: str | None
-    status: str | None
-    started_at: datetime | None
-    completed_at: datetime | None
-```
+原则：
 
-### 7.4 使用量对象
+- CCHV Rust Provider 为主要读取解析器；
+- Python Adapter 继续负责备份路径和恢复规则；
+- 两者通过能力映射文件保持一致；
+- 避免同一格式出现两套互相冲突的业务定义。
 
-```python
-class UsageRecord:
-    usage_uid: str
-    session_uid: str
-    message_uid: str | None
-    app_id: str
-    provider_id: str | None
-    model_id: str | None
-    timestamp: datetime
-    input_tokens: int
-    output_tokens: int
-    cached_read_tokens: int
-    cached_write_tokens: int
-    reasoning_tokens: int
-    tool_tokens: int
-    actual_cost: Decimal | None
-    estimated_cost: Decimal | None
-    cost_type: str
-    pricing_version: str | None
-```
+### C. Vault Core
 
-`cost_type` 必须区分：
+职责：
 
-- `actual`：数据源明确提供的实际金额；
-- `estimated_api_equivalent`：根据价格表估算的 API 等价成本；
-- `subscription_unknown`：订阅额度，无法映射真实扣费；
-- `unavailable`：无法计算。
-
-严禁把估算值显示成真实消费。
-
-### 7.5 Vault 自有元数据
-
-```python
-class VaultSessionMetadata:
-    session_uid: str
-    custom_title: str | None
-    note: str | None
-    pinned: bool
-    favorite: bool
-    vault_archived: bool
-    protected_from_cleanup: bool
-    custom_project_uid: str | None
-    updated_at: datetime
-```
-
-### 7.6 推荐数据库表
-
-```text
-apps
-machines
-projects
-sessions
-session_artifacts
-messages
-tool_calls
-file_references
-usage_records
-vault_session_metadata
-tags
-session_tags
-health_runs
-health_findings
-repair_plans
-repair_operations
-restore_runs
-handoff_packages
-exports
-analysis_jobs
-analysis_results
-pricing_tables
-schema_migrations
-```
-
----
-
-## 8. 适配器协议升级
-
-现有 `AdapterSpec` 只描述路径和基础恢复能力。下一版需要拆成声明和运行能力。
-
-### 8.1 适配器声明
-
-```python
-@dataclass(frozen=True)
-class AdapterCapabilities:
-    archive: bool = True
-    parse: bool = False
-    usage: bool = False
-    health: bool = False
-    repair: bool = False
-    native_rename: bool = False
-    native_archive: bool = False
-    native_restore: bool = False
-    handoff: bool = False
-```
-
-### 8.2 解析接口
-
-```python
-class SessionParser(Protocol):
-    def detect_format(self, artifact: Path) -> bool: ...
-    def parse_session(self, source: SessionSource) -> NormalizedSession: ...
-    def iter_messages(self, source: SessionSource) -> Iterator[NormalizedMessage]: ...
-    def iter_tool_calls(self, source: SessionSource) -> Iterator[NormalizedToolCall]: ...
-    def iter_usage(self, source: SessionSource) -> Iterator[UsageRecord]: ...
-```
-
-### 8.3 健康检查接口
-
-```python
-class HealthChecker(Protocol):
-    def run(self, source: SessionSource) -> list[HealthFinding]: ...
-```
-
-### 8.4 修复接口
-
-```python
-class RepairProvider(Protocol):
-    def plan(self, finding: HealthFinding) -> RepairPlan: ...
-    def apply(self, plan: RepairPlan, target: RepairTarget) -> RepairResult: ...
-```
-
-修复器不得直接接收任意绝对路径，必须使用已验证的 `RepairTarget`。
-
-### 8.5 原生修改接口
-
-```python
-class NativeSessionActions(Protocol):
-    def preview_rename(self, session_id: str, title: str) -> ChangePlan: ...
-    def apply_rename(self, plan: ChangePlan) -> ChangeResult: ...
-    def preview_archive(self, session_id: str) -> ChangePlan: ...
-    def apply_archive(self, plan: ChangePlan) -> ChangeResult: ...
-```
-
-只有官方格式稳定且有测试的适配器才能实现。
-
----
-
-## 9. 功能模块一：会话管理界面
-
-### 9.1 页面结构
-
-左侧导航：
-
-```text
-总览
-会话
-项目
-全局搜索
-健康检查
-修复记录
-跨电脑交接
-导出
-使用量
-AI 分析
-设置
-```
-
-### 9.2 总览页
-
-展示：
-
-- Vault 状态；
-- 最后备份时间；
-- 各软件会话数量；
-- 异常会话数量；
-- 最近更新会话；
-- 最近恢复和交接任务；
-- 存储占用；
-- 本月使用量；
-- 待处理警告。
-
-### 9.3 会话列表页
-
-列字段：
-
-- 标题；
-- 软件图标；
-- 项目；
-- 电脑；
-- 模型；
-- 更新时间；
-- 消息数；
-- 健康状态；
-- 收藏或固定；
-- 原生归档状态；
-- Vault 状态。
-
-筛选：
-
-- 软件；
-- 电脑；
-- 项目；
-- 日期；
-- 模型；
-- 健康状态；
-- 标签；
-- 是否收藏；
-- 是否可恢复；
-- 是否包含工具调用；
-- 是否包含错误。
-
-### 9.4 会话详情页
-
-页面区域：
-
-1. 顶部会话信息；
-2. 对话时间线；
-3. 工具调用折叠区；
-4. 文件和命令引用；
-5. 使用量；
-6. 健康状态；
-7. AI 分析；
-8. 原始文件和版本；
-9. 导出和恢复操作。
-
-长会话必须使用虚拟列表，不能一次渲染所有 DOM。
-
-### 9.5 页面状态
-
-必须设计：
-
-- 正常；
-- 正在解析；
-- 原文件缺失但 Vault 有备份；
-- 索引过期；
-- 会话损坏；
-- 只读；
-- 适配器不支持某项操作；
-- 恢复中；
-- 导出中；
-- AI 分析未启用。
-
-### 9.6 验收标准
-
-- 能查看所有已解析软件的会话；
-- 10,000 条会话列表仍可流畅分页；
-- 超长会话不会让浏览器失去响应；
-- 所有修改操作都有明确作用范围；
-- 不支持的原生操作不会显示为可点击按钮。
-
----
-
-## 10. 功能模块二：修改会话
-
-### 10.1 Vault 内安全修改
-
-第一阶段支持：
-
-- 修改 Vault 标题；
-- 添加标签；
-- 添加备注；
-- 收藏；
-- 固定；
-- 自定义项目归类；
-- Vault 归档；
-- 保护不被清理；
-- 软删除到隔离区。
-
-这些修改只写入 `catalog.db`，不修改厂商文件。
-
-### 10.2 原生会话修改
-
-按适配器能力逐步支持：
-
-- 原生重命名；
-- 原生归档或取消归档；
-- 恢复为活动会话；
-- 修复原生索引；
-- 在新隔离环境中创建可继续的副本。
-
-所有原生修改流程：
-
-```text
-选择操作
-→ 生成 ChangePlan
-→ 显示修改文件、数据库和风险
-→ 创建回滚快照
-→ 用户确认
-→ 原子执行
-→ 验证
-→ 写入操作记录
-```
-
-### 10.3 正文编辑边界
-
-不允许直接覆盖原始对话正文。
-
-需要编辑内容时，提供：
-
-- 派生副本；
-- 会话分支；
-- 清理版导出；
-- 修复副本；
-- 交接副本。
-
-每个副本必须指向原始会话和原始哈希。
-
-### 10.4 软删除
-
-软删除移动的是 Vault 管理记录或派生内容，不默认删除源应用记录。
-
-用户主动要求删除原生记录时：
-
-- 必须检查适配器是否支持；
-- 必须生成最后备份；
-- 必须显示影响范围；
-- 默认进入应用支持的回收站或 Vault 隔离区；
-- 不提供批量永久删除作为普通操作。
-
-### 10.5 验收标准
-
-- Vault 标题、标签、备注修改不影响原始哈希；
-- 原生操作都有 dry-run；
-- 失败后能恢复修改前文件；
-- 所有修改都记录操作者、时间、输入和结果；
-- 原生正文没有无版本覆盖路径。
-
----
-
-## 11. 功能模块三：跨电脑交接
-
-### 11.1 交接包格式
-
-文件扩展名建议：
-
-```text
-<project-or-session>.asvpack
-```
-
-本质为 ZIP，但有严格目录：
-
-```text
-package.json
-manifest.json
-checksums.sha256
-sessions/
-indexes/
-project/
-  git.json
-  path-map.json
-  environment.json
-analysis/
-redaction-report.json
-README.txt
-```
-
-### 11.2 交接范围
-
-支持：
-
-- 单会话；
-- 多会话；
-- 整个项目；
-- 某台电脑的某个软件；
-- 恢复所需最小文件；
-- 仅可读导出包。
-
-### 11.3 路径映射
-
-包内不能写死原电脑路径作为目标路径。
-
-保存：
-
-```json
-{
-  "source": "C:/Users/Leon/Projects/omnibridge",
-  "placeholder": "${PROJECT_ROOT}",
-  "target_required": true
-}
-```
-
-导入时用户选择目标项目目录，再生成映射。
-
-### 11.4 敏感信息扫描
-
-导出前扫描：
-
-- API Key；
-- OAuth Token；
-- 私钥；
-- `.env` 内容；
-- Cookie；
-- Authorization Header；
-- 数据库连接串；
-- 用户主目录；
-- 内网地址；
-- 邮箱和手机号，可选；
-- 命令中的密码参数。
-
-结果分为：
-
-- 阻止导出；
-- 自动脱敏；
-- 需要人工确认；
-- 可安全保留。
-
-### 11.5 导入预检
-
-导入前检查：
-
-- 包结构；
-- SHA-256；
-- 路径穿越；
-- ZIP Bomb；
-- 目标软件版本；
-- 目标目录是否存在；
-- 当前会话是否冲突；
-- 是否需要登录；
-- 是否支持原生恢复；
-- 项目 Git 状态。
-
-### 11.6 恢复策略
-
-优先顺序：
-
-1. 原生隔离恢复；
-2. 原生导入；
-3. 重建索引后恢复；
-4. 只读查看；
-5. Markdown/HTML 交接。
-
-不能恢复时，也必须保证内容可读。
-
-### 11.7 验收标准
-
-- 包被修改后校验失败；
-- 包不能写出目标目录；
-- 单会话交接不夹带其他会话；
-- 默认不包含认证文件；
-- 导入失败不会污染现有应用目录；
-- 每个交接包有完整报告和恢复说明。
-
----
-
-## 12. 功能模块四：备份、修复和恢复可靠性
-
-### 12.1 稳定读取
-
-活跃 JSONL 可能正在写入，读取应采用：
-
-```text
-读取前 stat
-→ 复制到临时文件
-→ 读取后 stat
-→ 大小和 mtime 一致则接受
-→ 变化则重试
-```
-
-超过最大重试次数时：
-
-- 标记为 `unstable`；
-- 不覆盖最后一个完整版本；
-- 下次同步继续。
-
-### 12.2 JSONL 尾部校验
-
-- 允许最后一行暂时不完整；
-- 不把不完整尾部发布为新的稳定版本；
-- 保存诊断信息；
-- 下一次同步合并完整内容。
-
-### 12.3 SQLite 可靠快照
-
-继续使用 Backup API，并增加：
-
-- `quick_check`；
-- 可选 `integrity_check`；
-- 表清单和 schema hash；
-- 快照前后页数；
-- WAL 模式记录；
-- 数据库版本信息；
-- 恢复演练状态。
-
-### 12.4 磁盘与文件系统检查
-
-同步前检查：
-
-- 可用空间；
-- Vault 是否可写；
-- 文件系统是否支持原子重命名；
-- 路径长度；
-- 移动硬盘是否突然断开；
-- 是否存在过期锁；
-- 是否写入同一源目录。
-
-### 12.5 版本策略
-
-建议：
-
-- 新会话：保留当前版本；
-- 追加会话：当前版本 + 关键版本；
-- 分叉会话：所有冲突版本；
-- SQLite：最新 + 最近 N 个历史快照；
-- 收藏或保护会话：永不自动清理；
-- 清理前生成计划，不直接执行。
-
-### 12.6 内容寻址对象库
-
-后续可引入：
-
-```text
-objects/sha256/<前两位>/<完整哈希>
-```
-
-原路径仅作为引用，可以减少重复版本占用。
-
-引入时必须保持旧 Vault 可读，迁移可中断、可恢复。
-
-### 12.7 恢复演练
-
-增加只读演练模式：
-
-```bash
-vault restore --app codex --scope session --session-id ... --drill
-```
-
-演练只验证：
-
-- 文件完整；
-- 恢复计划可生成；
-- 目标结构合法；
-- 启动脚本可生成；
-- 不真正发布恢复目录。
-
-### 12.8 验收标准
-
-- 写入中断不会留下半文件；
-- 移动硬盘断开不会损坏旧版本；
-- 不完整 JSONL 不覆盖稳定版本；
-- SQLite 快照可以独立打开；
-- 恢复前一定验证哈希；
-- 清理和修复都有回滚点。
-
----
-
-## 13. 功能模块五：多数据源解析与使用量统计
-
-### 13.1 解析流水线
-
-```text
-发现原始文件
-→ 计算来源版本
-→ 选择解析器
-→ 标准化会话
-→ 标准化消息和工具调用
-→ 提取使用量
-→ 更新 Catalog
-→ 更新全文索引
-```
-
-解析器必须幂等：相同来源哈希重复解析不能产生重复记录。
-
-### 13.2 解析状态
-
-每个会话记录：
-
-- 未解析；
-- 正在解析；
-- 已解析；
-- 部分解析；
-- 不支持格式；
-- 解析失败；
-- 等待文件稳定；
-- 需要适配器升级。
-
-### 13.3 使用量字段统一
-
-统一字段：
-
-```text
-input_tokens
-output_tokens
-cached_read_tokens
-cached_write_tokens
-reasoning_tokens
-tool_tokens
-total_tokens
-api_calls
-estimated_cost
-actual_cost
-```
-
-不同软件缺失的字段保持 `NULL`，不能填 0 冒充已知。
-
-### 13.4 价格表
-
-`pricing_tables` 应包含：
-
-- provider；
-- model；
-- 生效时间；
-- 输入价格；
-- 输出价格；
-- 缓存读写价格；
-- 计价单位；
-- 来源；
-- 版本。
-
-价格表允许：
-
-- 内置版本；
-- 用户手动覆盖；
-- 导入 JSON；
-- 不自动联网更新作为核心依赖。
-
-### 13.5 统计页面
-
-提供：
-
-- 日、周、月趋势；
-- 按软件；
-- 按项目；
-- 按模型；
-- 按会话；
-- 按电脑；
-- Token 构成；
-- 缓存使用；
-- 工具调用次数；
-- 最长会话；
-- 估算成本；
-- 数据完整度。
-
-### 13.6 数据质量标识
-
-每个统计值显示：
-
-- 完整；
-- 部分；
-- 估算；
-- 不可用。
-
-UI 必须能解释为什么某个工具没有成本数据。
-
-### 13.7 验收标准
-
-- 同一会话重复索引不重复累计；
-- 不同来源 Token 字段映射有测试；
-- 估算成本与实际成本明显区分；
-- 价格表变更不会修改原始 UsageRecord；
-- 支持按数据完整度过滤。
-
----
-
-## 14. 功能模块六：会话健康检查和修复
-
-### 14.1 健康等级
-
-```text
-healthy
-warning
-broken
-unrecoverable
-unknown
-```
-
-### 14.2 通用检查项
-
-所有文件型适配器检查：
-
-- 文件是否存在；
-- SHA-256 是否匹配；
-- JSONL 是否逐行可解析；
-- 是否有不完整尾部；
-- 会话 ID 是否一致；
-- 时间是否异常回退；
-- 文件是否突然缩短；
-- 是否出现同 ID 不同内容；
-- 索引是否引用缺失文件；
-- 原始路径是否逃逸允许目录。
-
-### 14.3 消息链检查
-
-支持父子链的软件检查：
-
-- `parentUuid` 是否存在；
-- 是否出现循环；
-- 是否有孤儿消息；
-- 是否有重复消息 ID；
-- 压缩节点是否连接；
-- 会话头是否缺失；
-- 消息时间是否乱序。
-
-### 14.4 工具调用检查
-
-- tool use 是否有对应 result；
-- tool call ID 是否重复；
-- 状态是否未结束；
-- 工具结果是否截断；
-- 结果是否引用不存在的附件。
-
-### 14.5 SQLite 检查
-
-- `quick_check`；
-- schema 版本；
-- 必要表是否存在；
-- 会话行与原始文件是否一致；
-- 路径是否存在；
-- 重复 thread ID；
-- 归档状态是否冲突；
-- 回填状态是否卡住。
-
-### 14.6 检查结果模型
-
-```python
-class HealthFinding:
-    finding_id: str
-    session_uid: str | None
-    app_id: str
-    checker_id: str
-    severity: str
-    code: str
-    summary: str
-    evidence_json: str
-    repairable: bool
-    repair_provider: str | None
-```
-
-### 14.7 修复计划
-
-修复不是一个按钮直接改文件，而是：
-
-```python
-class RepairPlan:
-    plan_id: str
-    finding_ids: list[str]
-    source_hashes: dict[str, str]
-    operations: list[RepairOperation]
-    backup_targets: list[str]
-    expected_result: dict
-    risk_level: str
-    reversible: bool
-```
-
-### 14.8 第一批修复能力
-
-优先实现：
-
-1. Claude Code 索引重建；
-2. Claude Code 缺失父链的安全修复副本；
-3. 重复消息 ID 检测和派生副本重新编号；
-4. 缺失 tool result 的标记修复；
-5. Codex rollout 与数据库差异诊断；
-6. Codex 隔离回填环境；
-7. 无效 Vault 索引重建；
-8. 损坏尾部隔离。
-
-### 14.9 修复目标
-
-修复默认写入：
-
-```text
-quarantine/<run-id>/original/
-derived/repair-plans/<plan-id>/repaired/
-```
-
-只有用户明确选择“应用回原生目录”，且适配器支持时，才执行原生修改。
-
-### 14.10 验收标准
-
-- Doctor 默认只读；
-- Repair 默认 dry-run；
-- 修复计划绑定源哈希，源变化后计划失效；
-- 修复前保留副本；
-- 修复后重新执行健康检查；
-- 能完整撤销可逆操作；
-- 所有修复有审计记录。
-
----
-
-## 15. 功能模块七：全局搜索与查看
-
-### 15.1 搜索对象
-
-索引：
-
-- 会话标题；
-- 用户消息；
-- AI 回复；
-- 推理摘要，在厂商数据允许时；
-- 工具名称；
-- 命令；
-- 工具结果；
-- 文件路径；
-- 错误信息；
-- Git 分支和 Commit；
-- 项目；
-- 标签；
-- 备注；
-- AI 分析结果。
-
-### 15.2 搜索引擎
-
-使用 SQLite FTS5。
-
-为了支持中英文：
-
-- 优先使用 `unicode61` 做词项搜索；
-- 可用时增加 `trigram` 索引做中文和子字符串搜索；
-- 不支持 trigram 的 SQLite 构建使用应用层 2/3-gram 辅助索引；
-- 启动时检测能力，不假设所有环境相同。
-
-### 15.3 查询语法
-
-示例：
-
-```text
-auth error
-app:codex docker
-project:omnibridge "permission denied"
-since:30d model:gpt-5.6
-has:tool tool:shell
-file:panel.ts
-health:broken
-machine:leon-windows-main
-```
-
-### 15.4 搜索结果
-
-每条结果显示：
-
-- 软件；
-- 会话标题；
-- 项目；
-- 时间；
-- 命中片段；
-- 命中类型；
-- 消息位置；
-- 健康状态；
-- 恢复或导出入口。
-
-### 15.5 索引更新
-
-- 只索引新增或来源版本变化的会话；
-- 删除派生索引不影响原始档案；
-- 支持全量重建；
-- 支持单软件、单电脑、单会话重建；
-- 索引任务可暂停和恢复；
-- 记录解析器版本。
-
-### 15.6 性能目标
-
-基准目标：
-
-- 10,000 个会话分页查询无明显等待；
-- 100,000 条消息常规搜索目标小于 1 秒；
-- 1,000,000 条消息在普通 SSD 上目标小于 3 秒；
-- 搜索结果支持流式或渐进显示；
-- 长文本索引不阻塞 UI。
-
-以上需要基准测试验证，未达标时以结果为准，不在产品中虚假承诺。
-
-### 15.7 验收标准
-
-- 中英文关键词可搜索；
-- 能按软件、项目、日期、模型组合筛选；
-- 命中后可跳转到具体消息；
-- 索引可全量重建；
-- 原始文件变化后旧索引不会继续显示为最新；
-- 搜索结果不会泄露被脱敏字段。
-
----
-
-## 16. 功能模块八：导出成可读文件
-
-### 16.1 导出格式
-
-第一阶段：
-
-- Markdown；
-- HTML；
-- JSON。
-
-第二阶段：
-
-- PDF，通过 HTML 打印或专用渲染器；
-- ZIP 项目档案；
-- `.asvpack` 交接包。
-
-### 16.2 导出预设
-
-#### Clean Chat
-
-保留：
-
-- 用户消息；
-- AI 回复；
-- 必要标题和时间。
-
-去掉：
-
-- 系统噪声；
-- IDE XML；
-- 超长工具输出；
-- 重复上下文；
-- 隐藏元数据。
-
-#### Technical Audit
-
-保留：
-
-- 完整对话；
-- 工具调用；
-- 命令；
-- 文件路径；
-- 错误；
-- 模型和使用量；
-- 健康状态。
-
-#### Last N Turns
-
-只导出最近指定回合。
-
-#### Full Raw
-
-包含：
-
-- 原始记录；
-- 标准化记录；
-- manifest；
-- 哈希；
-- 解析器版本。
-
-#### Project Handoff
-
-面向另一个开发者或模型：
-
-- 项目摘要；
-- 决策；
-- 当前状态；
-- 未完成任务；
-- 关键会话链接；
-- Git 信息；
-- 已脱敏技术对话。
-
-### 16.3 导出过滤
-
-支持：
-
-- 最近 N 个回合；
-- 排除推理；
-- 排除工具输出；
-- 工具输出最大长度；
-- 只保留错误；
-- 只保留文件修改；
-- 隐藏绝对路径；
-- 隐藏用户名；
-- 自动脱敏；
-- 包含或排除使用量。
-
-### 16.4 引用与可追溯
-
-导出中给每条消息稳定锚点：
-
-```text
-session_uid
-message_uid
-native_message_id
-source_hash
-```
-
-AI 分析引用这些锚点，避免只有摘要没有证据。
-
-### 16.5 HTML 导出
-
-HTML 需支持：
-
-- 左侧目录；
-- 角色区分；
-- 工具调用折叠；
-- 代码高亮；
-- 搜索；
-- 打印样式；
-- 单文件模式；
-- 多文件资源模式。
-
-### 16.6 验收标准
-
-- 相同来源和配置生成稳定结果；
-- Clean Chat 不包含敏感认证信息；
-- 超长工具输出不会导致浏览器卡死；
-- JSON 保留机器可读字段；
-- 导出报告记录过滤和脱敏规则；
-- 导出结果能定位回原始消息。
-
----
-
-## 17. 功能模块九：AI 分析
-
-### 17.1 分析类型
-
-支持：
-
-- 会话摘要；
-- 项目摘要；
-- 关键决策；
-- 待办事项；
-- 已解决问题；
-- 错误与解决方案；
-- 修改文件清单；
-- 工具和命令时间线；
-- 可复用提示词；
-- 风险和技术债；
-- 知识卡；
-- 会话相似度；
-- 周报或项目进展；
-- 交接说明。
-
-### 17.2 AI 提供方
-
-统一接口：
-
-```python
-class AnalysisProvider(Protocol):
-    provider_id: str
-    privacy_mode: str
-    def analyze(self, request: AnalysisRequest) -> AnalysisResponse: ...
-```
-
-支持：
-
-- 本地模型；
-- Ollama；
-- OpenAI 兼容接口；
-- 用户自定义兼容端点；
-- 关闭 AI，只用规则抽取。
-
-### 17.3 隐私模式
-
-```text
-off
-local_only
-remote_redacted
-remote_full_explicit
-```
-
-默认：`off` 或 `local_only`。
-
-`remote_full_explicit` 必须每次明确确认，不能成为静默默认。
-
-### 17.4 分析流水线
-
-```text
-选择会话或项目
-→ 生成材料清单
-→ 脱敏
-→ 分块
-→ 提取事实
-→ 汇总
-→ 引用校验
-→ 写入派生结果
-```
-
-不能直接把超长完整会话一次发送给模型。
-
-### 17.5 引用规则
-
-每个 AI 结论都尽量包含：
-
-```text
-source_session_uid
-source_message_uids
-source_hash
-analysis_prompt_version
-model_id
-created_at
-```
-
-UI 点击引用可跳转到原始消息。
-
-### 17.6 提示词版本
-
-提示词保存在版本化模板中：
-
-```text
-analysis/templates/session-summary/v1.md
-analysis/templates/decision-log/v1.md
-analysis/templates/project-handoff/v1.md
-```
-
-结果记录模板版本，方便重新生成和比较。
-
-### 17.7 增量分析
-
-会话追加时：
-
-- 不重新分析全部历史；
-- 分析新增消息；
-- 更新汇总；
-- 保留旧分析版本；
-- 允许查看变化。
-
-### 17.8 成本控制
-
-- 每次任务预估 Token；
-- 设置单次和每日预算；
-- 支持仅本地模型；
-- 结果缓存；
-- 相同来源哈希和模板版本不重复调用；
-- 统计 AI 分析本身的使用量。
-
-### 17.9 验收标准
-
-- AI 结果有来源引用；
-- 远程分析前显示发送内容范围；
-- 相同输入可复用缓存；
-- 原始会话更新后旧分析标记过期；
-- 用户可删除所有派生 AI 数据；
-- 关闭 AI 不影响备份、搜索、健康检查和导出。
-
----
-
-## 18. 本地 API 设计
-
-统一前缀：
-
-```text
-/api/v1
-```
-
-### 18.1 Vault 和任务
-
-```text
-GET  /vault/status
-POST /vault/scan
-POST /vault/sync
-POST /vault/verify
-GET  /tasks
-GET  /tasks/{task_id}
-GET  /events                    # SSE
-```
-
-### 18.2 会话管理
-
-```text
-GET   /sessions
-GET   /sessions/{session_uid}
-PATCH /sessions/{session_uid}/metadata
-POST  /sessions/{session_uid}/actions/preview
-POST  /sessions/{session_uid}/actions/apply
-GET   /sessions/{session_uid}/versions
-```
-
-### 18.3 搜索
-
-```text
-GET  /search
-POST /search/reindex
-GET  /search/status
-```
-
-### 18.4 健康和修复
-
-```text
-POST /health/run
-GET  /health/findings
-GET  /health/findings/{finding_id}
-POST /repairs/plan
-POST /repairs/{plan_id}/apply
-POST /repairs/{plan_id}/rollback
-```
-
-### 18.5 恢复和交接
-
-```text
-POST /restore/preview
-POST /restore/apply
-POST /handoff/export
-POST /handoff/import/preview
-POST /handoff/import/apply
-```
-
-### 18.6 导出
-
-```text
-POST /exports
-GET  /exports
-GET  /exports/{export_id}
-```
-
-### 18.7 使用量
-
-```text
-GET /usage/summary
-GET /usage/timeseries
-GET /usage/models
-GET /usage/sessions
-```
-
-### 18.8 AI 分析
-
-```text
-POST /analysis/jobs
-GET  /analysis/jobs
-GET  /analysis/jobs/{job_id}
-GET  /sessions/{session_uid}/analysis
-DELETE /analysis/results/{result_id}
-```
-
-### 18.9 API 安全
-
-- 仅监听 localhost；
-- 每次启动生成本地会话 Token；
-- 防 CSRF；
-- 限制文件访问根目录；
-- 所有写操作需要来源哈希或版本号；
-- 长任务使用任务队列，不阻塞请求；
-- 错误响应不回显密钥和完整敏感路径。
-
----
-
-## 19. 后台任务模型
-
-需要任务队列处理：
-
-- 扫描；
-- 同步；
-- 解析；
-- 索引；
+- 建立 Vault；
+- 增量同步；
+- 内容校验；
+- SQLite 快照；
+- 冲突版本；
 - Doctor；
 - Repair；
 - Restore；
-- Export；
 - Handoff；
-- AI Analysis。
+- 审计报告。
 
-第一阶段不需要 Redis，可使用 SQLite 持久任务表和单进程工作线程。
+第一阶段保持 Python，打包为 Sidecar。
 
-任务字段：
+### D. App Metadata Store
+
+保存应用自己的信息，而不是修改原始会话：
+
+- Vault 标题；
+- 标签；
+- 备注；
+- 收藏；
+- 固定；
+- 自定义项目归属；
+- 健康状态缓存；
+- 修复记录；
+- 导出记录；
+- AI 分析结果；
+- 任务记录。
+
+建议：
 
 ```text
-task_id
-task_type
-status
-progress_current
-progress_total
-created_at
-started_at
-completed_at
-cancel_requested
-input_json
-result_json
-error_code
-error_detail_redacted
+<app-data>/ai-session-vault/app.db
 ```
 
-状态：
+### E. 原始数据层
+
+来源类型：
 
 ```text
-queued
-running
-paused
-completed
-failed
-cancelled
+live       厂商当前原生会话
+vault      AgentSessionVault 备份
+recovery   隔离恢复目录
+handoff    导入的交接包
+```
+
+UI 必须显示来源，不允许让用户误以为 Vault 副本就是正在运行的原生会话。
+
+## 6.2 数据流
+
+```text
+原生会话
+   │
+   ├── CCHV Provider ──→ 浏览 / 搜索 / 统计
+   │
+   └── Vault Core ─────→ AgentSessionVault
+                              │
+                              ├── Provider 读取 Vault 副本
+                              ├── Doctor / Repair
+                              ├── Restore
+                              ├── Handoff
+                              └── AI 分析
 ```
 
 ---
 
-## 20. UI 关键交互
+## 7. 仓库与上游同步策略
 
-### 20.1 危险操作
+## 7.1 推荐双仓库
 
-危险按钮必须经过：
-
-```text
-预览影响
-→ 显示备份位置
-→ 输入确认或二次确认
-→ 执行
-→ 验证结果
-```
-
-### 20.2 能力提示
-
-例如某软件只支持备份，不支持原生修改：
+### 仓库一：当前核心仓库
 
 ```text
-该会话可以查看、搜索、导出和添加 Vault 标签。
-当前适配器不支持修改该软件的原生标题。
+knownothing20/ai-session
 ```
 
-不能只把按钮置灰而不解释。
+职责：
 
-### 20.3 版本查看
+- Vault Core；
+- Python CLI；
+- Sidecar 协议；
+- Doctor/Repair/Restore/Handoff；
+- 核心文档；
+- 匿名化 Fixtures。
 
-会话详情提供：
+### 仓库二：桌面软件 Fork
 
-- 当前版本；
-- 历史版本；
-- 冲突版本；
-- 修复版本；
-- AI 分析版本；
-- 导出历史。
+建议实施时创建：
 
-### 20.4 差异查看
+```text
+knownothing20/ai-session-desktop
+```
 
-支持：
+从 CCHV Fork，职责：
 
-- 原始版本对比；
-- 修复前后对比；
-- AI 摘要版本对比；
-- 标题和标签修改历史；
-- 索引中记录的来源变化。
+- 桌面 UI；
+- Rust Provider；
+- Tauri；
+- 软件打包；
+- 调用 Vault Core Sidecar；
+- 应用元数据数据库。
+
+### 为什么不直接把 CCHV 全量塞进当前仓库
+
+- 上游变更量大；
+- Rust、React、Python 混在一个仓库会使同步困难；
+- 直接 Fork 更容易比较上游提交；
+- 桌面发布和核心 CLI 可独立版本；
+- 最终安装包仍可把 Sidecar 一起打包，用户看到的是一个软件。
+
+## 7.2 上游同步
+
+添加远端：
+
+```text
+origin    knownothing20/ai-session-desktop
+upstream  jhlee0409/claude-code-history-viewer
+```
+
+维护分支：
+
+```text
+main              我们的稳定分支
+upstream-sync     纯上游同步分支
+feature/*         功能分支
+```
+
+同步流程：
+
+1. 读取上游 Release Notes；
+2. 拉取到 `upstream-sync`；
+3. 本地运行测试和构建；
+4. 检查 Provider、数据库和 Tauri 配置差异；
+5. 合并到我们分支；
+6. 解决冲突；
+7. 本地验证；
+8. 手动提交。
+
+不得自动周期同步。
+
+## 7.3 GitHub Actions 规则
+
+开发期间：
+
+- 不复制上游 `.github/workflows/`；
+- 不创建 Workflow；
+- 不触发远端构建；
+- 不开启上游 Actions；
+- 不设置 push、pull_request、schedule 或 cron；
+- 使用本地 Rust、Node、Python 命令验证；
+- 发布构建需要 Actions 时，必须单独说明并获得明确授权。
+
+## 7.4 上游代码隔离
+
+Fork 初始化时：
+
+- 保留 `LICENSE`；
+- 新增 `THIRD_PARTY_NOTICES.md`；
+- “关于”页面显示上游项目；
+- 修改品牌和应用 ID；
+- 修改存储目录，避免与原 CCHV 冲突；
+- 删除未使用的自动更新配置；
+- 检查所有外部网络请求；
+- 默认完全离线可用。
 
 ---
 
-## 21. 安全与隐私
+## 8. 数据与安全原则
 
-### 21.1 永不进入 Vault 的内容
+### 8.1 原始数据不可变
 
-默认排除：
+默认不修改：
 
-- `auth.json`；
-- OAuth 凭据；
+- 原生 transcript；
+- Vault 中的当前备份；
+- 厂商 SQLite；
+- 厂商索引。
+
+管理操作优先写入应用自己的 `app.db`。
+
+### 8.2 原生修改必须能力门控
+
+Provider 声明：
+
+```text
+can_read
+can_search
+can_export
+can_rename_native
+can_archive_native
+can_delete_native
+can_restore_single
+can_restore_full
+can_repair_index
+can_repair_transcript
+```
+
+没有明确能力时，UI 禁用按钮，而不是尝试通用修改。
+
+### 8.3 危险操作流程
+
+```text
+预检
+→ 读取稳定性检查
+→ 生成计划
+→ 显示 Diff 和影响范围
+→ 创建备份或修复副本
+→ 原子写入
+→ 重读校验
+→ 写入审计
+→ 支持回滚
+```
+
+### 8.4 凭据和隐私
+
+不得备份或导出：
+
+- auth.json；
 - API Key；
+- OAuth Token；
 - Cookie；
 - Keychain 导出；
 - `.env`；
-- 浏览器登录态；
-- 可重新生成的缓存；
-- 运行 PID 和锁；
-- 无关源码目录。
+- 未经用户允许的项目源码。
 
-### 21.2 路径安全
-
-任何 manifest、交接包或导入文件中的路径都必须：
-
-- 是相对路径；
-- 不包含 `..`；
-- 不能是绝对路径；
-- 不能通过符号链接逃逸；
-- 发布前再次解析真实路径；
-- Windows 和 Unix 分别验证。
-
-### 21.3 脱敏规则
-
-脱敏器应支持：
-
-- 固定规则；
-- 用户自定义规则；
-- 路径占位符；
-- 正则；
-- 文件名黑名单；
-- 预览；
-- 报告；
-- 可重复执行。
-
-### 21.4 审计日志
-
-记录：
-
-- 修改 Vault 元数据；
-- 原生修改；
-- 修复；
-- 恢复；
-- 交接导出和导入；
-- 远程 AI 分析；
-- 清理；
-- 回滚。
-
-审计日志不记录完整密钥和敏感正文。
+Handoff 和 AI 分析前必须运行敏感信息扫描。
 
 ---
 
-## 22. 数据库迁移与兼容
+## 9. 桌面软件功能
 
-### 22.1 两类 Schema
+## 9.1 总览
 
-- Vault 原始 manifest schema；
-- Catalog 派生数据库 schema。
+显示：
 
-两者独立版本化。
+- 已检测 Provider；
+- 原生会话数量；
+- Vault 会话数量；
+- 最近备份；
+- 备份失败；
+- 健康警告；
+- 可修复会话；
+- 存储占用；
+- 最近使用量；
+- AI 分析任务。
 
-### 22.2 Catalog 可重建
+## 9.2 会话浏览
 
-如果 Catalog 迁移失败：
+支持：
 
-- 不修改原始 `apps/`；
-- 备份旧 Catalog；
-- 创建新 Catalog；
-- 根据 manifest 重新解析；
-- 记录迁移报告。
+- 按 Provider；
+- 按项目；
+- 按机器；
+- 按来源；
+- 按日期；
+- 按标签；
+- 按健康状态；
+- 按模型；
+- 按是否已备份；
+- 按是否可恢复。
 
-### 22.3 现有 Vault 兼容
+## 9.3 会话详情
 
-V0.3 Vault 打开后：
+展示：
 
-1. 检测 `vault.json`；
-2. 保持原布局；
-3. 创建 `catalog/`；
-4. 读取现有 manifest；
-5. 生成统一目录；
-6. 不移动原始文件。
+- 用户消息；
+- 助手消息；
+- 推理内容；
+- 工具调用；
+- 命令；
+- 文件路径；
+- Diff；
+- Token；
+- 模型；
+- Git 信息；
+- 原始文件位置；
+- Vault 文件位置；
+- 版本记录；
+- 健康报告；
+- 恢复命令。
 
----
+## 9.4 任务中心
 
-## 23. 测试策略
-
-### 23.1 本地测试命令
-
-```bash
-python -m compileall -q scripts src tests
-python -m unittest discover -s tests -v
-```
-
-后续引入 pytest 时可增加：
-
-```bash
-python -m pytest -q
-```
-
-但不强制当前代码一次性迁移。
-
-### 23.2 测试类型
-
-#### 单元测试
-
-- 路径解析；
-- ID 提取；
-- 标准化映射；
-- Token 映射；
-- 搜索查询解析；
-- 脱敏；
-- 健康检查；
-- 修复计划。
-
-#### Fixture 测试
-
-每个适配器维护匿名化样本：
-
-- 正常会话；
-- 活跃追加；
-- 归档；
-- 损坏尾部；
-- 重复 ID；
-- 索引缺失；
-- 数据库 WAL；
-- 旧版本格式。
-
-#### 集成测试
-
-- 首次同步；
-- 重复同步；
-- 会话增长；
-- 冲突；
-- 搜索重建；
-- 导出；
-- Doctor；
-- Repair dry-run；
-- Repair apply + rollback；
-- Handoff 导出和导入；
-- Codex 隔离恢复。
-
-#### UI 测试
-
-- 列表分页；
-- 搜索跳转；
-- 长会话虚拟滚动；
-- 危险操作确认；
-- 不支持能力提示；
-- 任务进度；
-- 错误状态。
-
-### 23.3 破坏性测试规则
-
-- 只在临时目录；
-- 绝不指向真实用户目录；
-- 临时 HOME；
-- 临时 Vault；
-- 测试结束清理；
-- 测试代码检查目标目录标记。
-
-### 23.4 无 GitHub Actions
-
-开发阶段：
-
-- 不创建 Workflow；
-- 不触发远端测试；
-- 提交前保存本地测试结果摘要；
-- PR 中注明实际执行的本地命令；
-- 未运行的测试必须明确标注。
-
----
-
-## 24. 可观测性与错误处理
-
-### 24.1 日志等级
+统一显示：
 
 ```text
-DEBUG
-INFO
-WARNING
-ERROR
+备份
+校验
+Doctor
+Repair
+Restore
+Export
+Handoff
+AI Analyze
 ```
 
-### 24.2 错误代码
+任务支持：
 
-建议统一：
+- 排队；
+- 运行；
+- 成功；
+- 部分成功；
+- 失败；
+- 取消；
+- 查看日志；
+- 打开报告目录。
+
+---
+
+## 10. Vault Core 接入协议
+
+## 10.1 初期方案：Tauri Sidecar
+
+将 Python 核心打包为：
+
+```text
+vault-core.exe
+vault-core
+```
+
+Tauri 启动子进程。
+
+## 10.2 命令
+
+```text
+list-apps
+inspect
+layout
+sync
+verify
+restore
+doctor
+repair-plan
+repair-apply
+repair-rollback
+handoff-export
+handoff-inspect
+handoff-import
+export
+```
+
+## 10.3 JSONL 事件
+
+标准输出只输出 JSONL：
+
+```json
+{"type":"task_started","task_id":"...","operation":"sync"}
+{"type":"progress","current":12,"total":100,"message":"Hashing sessions"}
+{"type":"warning","code":"SOURCE_UNSTABLE","message":"..."}
+{"type":"artifact","kind":"report","path":"..."}
+{"type":"task_completed","ok":true,"summary":{}}
+```
+
+标准错误用于诊断，不用于机器协议。
+
+## 10.4 错误代码
+
+统一：
 
 ```text
 VAULT_NOT_FOUND
@@ -1920,9 +747,8 @@ SOURCE_NOT_FOUND
 SOURCE_UNSTABLE
 HASH_MISMATCH
 SQLITE_CHECK_FAILED
-PARSE_UNSUPPORTED
 PARSE_FAILED
-INDEX_STALE
+CAPABILITY_UNSUPPORTED
 HEALTH_BROKEN
 REPAIR_PLAN_STALE
 RESTORE_TARGET_EXISTS
@@ -1930,218 +756,1173 @@ HANDOFF_SECRET_BLOCKED
 AI_PROVIDER_DISABLED
 ```
 
-### 24.3 用户错误信息
+## 10.5 Sidecar 安全
 
-每个错误显示：
+- 所有文件路径必须绝对化；
+- 阻止 `..` 路径穿越；
+- 目标必须在允许根目录；
+- 修复只对带标记的副本执行；
+- 恢复目录必须不存在；
+- 任务中断清理 staging；
+- 不允许 UI 传入任意 shell 命令。
 
-- 发生了什么；
-- 是否修改了源文件；
-- 旧数据是否安全；
-- 下一步建议；
-- 报告位置。
+## 10.6 后续 Rust 迁移
+
+优先迁移高频、稳定模块：
+
+- 哈希；
+- 文件扫描；
+- Catalog；
+- 任务事件；
+- Provider 共用数据结构。
+
+保留 Python：
+
+- 高风险 Repair；
+- 快速变化的厂商恢复；
+- Handoff 规则；
+- 原型功能。
+
+迁移不是首个版本前置条件。
 
 ---
 
-## 25. 分期开发计划
+## 11. 会话管理和修改
 
-采用能力依赖顺序，不按页面数量推进。
+## 11.1 Vault 自有管理
 
-### 阶段 0：核心契约升级
+所有 Provider 都支持：
 
-目标：为后续模块建立稳定接口。
+- 自定义标题；
+- 标签；
+- 备注；
+- 收藏；
+- 固定；
+- 自定义项目；
+- 隐藏；
+- 软删除；
+- 清理保护。
 
-交付：
+这些只写入 `app.db`，不改厂商文件。
 
-- `AdapterCapabilities`；
-- 标准化 Session、Message、ToolCall、Usage 模型；
-- Catalog schema；
-- parser 接口；
-- task 模型；
-- schema migration；
-- 现有适配器兼容层。
+## 11.2 原生修改
 
-复杂度：L。
+### Codex
 
-### 阶段 1：统一目录、解析和全局搜索
+优先复用和审计 CCHV 已有能力：
 
-交付：
+- 原生标题修改；
+- 归档；
+- 删除。
 
-- Catalog 建库；
-- Codex、Claude Code、Gemini CLI 首批解析器；
-- 增量索引；
-- FTS5；
-- CLI 搜索；
-- 数据完整度和解析状态。
+增加：
 
-这是所有 UI、统计和 AI 功能的基础。
+- 修改前状态数据库快照；
+- SQLite 锁检查；
+- Diff/影响预览；
+- 回读验证；
+- 操作审计；
+- 从备份恢复。
 
-复杂度：XL。
+### 其他 Provider
 
-### 阶段 2：本地 Web UI 与 Vault 会话管理
-
-交付：
-
-- FastAPI；
-- 本地 Web UI；
-- 总览、会话列表和详情；
-- Vault 标题、标签、备注、收藏、固定；
-- 任务进度和错误页面；
-- 搜索页面。
-
-复杂度：XL。
-
-### 阶段 3：健康检查和安全修复
-
-交付：
-
-- 通用 Doctor；
-- Claude Code 检查器；
-- Codex 检查器；
-- 修复计划；
-- dry-run；
-- 修复副本；
-- 回滚；
-- UI 健康中心。
-
-复杂度：XL，风险高。
-
-### 阶段 4：可读导出与跨电脑交接
-
-交付：
-
-- Markdown、HTML、JSON；
-- 导出预设；
-- 脱敏器；
-- `.asvpack`；
-- 导入预检；
-- 路径映射；
-- Codex 交接；
-- 只读降级方案。
-
-复杂度：XL。
-
-### 阶段 5：多数据源使用量统计
-
-交付：
-
-- Usage 解析接口；
-- 首批工具 Token 映射；
-- 价格表；
-- 估算和实际成本区分；
-- 趋势、项目、模型和会话统计页面。
-
-复杂度：L。
-
-### 阶段 6：AI 分析
-
-交付：
-
-- 本地和兼容 API Provider；
-- 隐私模式；
-- 会话摘要；
-- 决策、待办、问题解决；
-- 项目交接摘要；
-- 引用跳转；
-- 增量更新；
-- 成本预算和缓存。
-
-复杂度：XL。
-
-### 阶段 7：更多原生修改和恢复
-
-按证据和测试逐个加入：
+逐个验证，不统一猜测：
 
 - Claude Code；
 - Gemini CLI；
 - Qwen Code；
-- Kimi CLI；
-- OpenCode 或 Hermes 整库恢复。
+- Kimi；
+- OpenCode；
+- Goose。
 
-复杂度：每个适配器 M–XL，风险取决于厂商格式。
+## 11.3 删除策略
 
----
-
-## 26. 优先级矩阵
-
-| 功能 | 用户价值 | 技术依赖 | 风险 | 优先级 |
-|---|---:|---:|---:|---:|
-| 统一目录与解析 | 极高 | 核心 | 中 | P0 |
-| 全局搜索查看 | 极高 | 统一目录 | 中 | P0 |
-| Vault 会话管理 | 高 | 统一目录、UI | 低 | P0 |
-| 备份可靠性增强 | 极高 | 现有同步 | 中 | P0 |
-| 健康检查 | 极高 | 解析器 | 中 | P0 |
-| 安全修复 | 极高 | 健康检查 | 高 | P1 |
-| 可读导出 | 高 | 解析器 | 低 | P1 |
-| 跨电脑交接 | 高 | 导出、恢复、脱敏 | 高 | P1 |
-| 使用量统计 | 中高 | Usage 解析 | 中 | P1 |
-| AI 分析 | 高 | 搜索、解析、隐私 | 中高 | P2 |
-| 原生会话修改 | 中高 | 厂商能力 | 高 | P2 |
-| 更多软件原生恢复 | 高 | 厂商能力 | 高 | P2 |
-
----
-
-## 27. 首个可用版本范围
-
-建议第一个真正面向日常使用的版本包含：
+默认：
 
 ```text
-现有可靠备份
-+ 统一会话目录
-+ Codex/Claude/Gemini 解析
-+ 全局搜索
-+ 本地管理界面
-+ Vault 标题/标签/备注
-+ Markdown/HTML 导出
-+ 基础 Doctor
-+ Codex 隔离恢复
+隐藏
+→ Vault 回收站
+→ 系统回收站
+→ 永久删除
 ```
 
-暂不把以下功能塞入首个版本：
+永久删除必须二次确认，并显示：
 
-- 自动修改所有厂商的原生会话；
-- 所有软件的完整用量统计；
-- 云端同步；
-- 复杂团队权限；
-- 全自动 AI 分析；
-- 自动永久删除。
+- 原生文件；
+- Vault 版本；
+- 索引；
+- 恢复能力；
+- 是否还有其他副本。
 
 ---
 
-## 28. Definition of Done
+## 12. 备份、校验和恢复
+
+## 12.1 备份入口
+
+UI 支持：
+
+- 全部 Provider；
+- 单 Provider；
+- 单项目；
+- 单会话；
+- 当前电脑；
+- 指定机器 ID；
+- 手动选择 Vault；
+- Dry-run。
+
+## 12.2 可靠性增强
+
+新增：
+
+- 备份前磁盘空间检查；
+- 移动硬盘断开检测；
+- 中断后续传；
+- 文件稳定窗口；
+- 活跃会话尾部二次读取；
+- 长任务 checkpoint；
+- 失败重试但不无限重试；
+- 上次成功水位线；
+- 报告对比；
+- Vault 版本升级预检。
+
+## 12.3 校验
+
+三级校验：
+
+### 快速
+
+- 文件存在；
+- size；
+- mtime；
+- manifest。
+
+### 标准
+
+- SHA-256；
+- SQLite quick_check；
+- manifest 引用。
+
+### 深度
+
+- transcript 可解析；
+- Session ID 一致；
+- 索引对应；
+- Provider Doctor；
+- 恢复预检。
+
+## 12.4 恢复中心
+
+展示：
+
+- 可恢复 Provider；
+- 恢复范围；
+- 原生恢复；
+- 隔离恢复；
+- 只读恢复；
+- 恢复目标；
+- 需要重新登录；
+- 路径映射；
+- 恢复报告。
+
+Codex 保留当前隔离恢复为第一优先。
+
+---
+
+## 13. 健康检查和修复
+
+## 13.1 Doctor 架构
+
+```text
+Common Checks
+Provider Checks
+Index Checks
+SQLite Checks
+Restore Readiness
+```
+
+## 13.2 通用检查
+
+- 文件不可读；
+- JSON/JSONL 解析错误；
+- 突然截短；
+- 空文件；
+- Session ID 不一致；
+- 重复内容；
+- 时间戳异常；
+- manifest 缺项；
+- hash 不匹配；
+- Vault 路径逃逸；
+- SQLite 损坏；
+- index 指向不存在文件。
+
+## 13.3 Claude 检查
+
+- `parentUuid` 断链；
+- 重复 message UUID；
+- 不连通消息树；
+- tool use 缺少 result；
+- `sessions-index.json` 缺失或过期；
+- 会话存在但 resume 列表不可见。
+
+## 13.4 Codex 检查
+
+- rollout 命名不合法；
+- session meta 缺失；
+- rollout 与 threads 表不一致；
+- active/archive 状态不一致；
+- 旧绝对路径；
+- backfill 状态异常；
+- SQLite 无法读取；
+- JSONL 存在但数据库记录缺失。
+
+## 13.5 修复类型
+
+```text
+report_only
+copy_repair
+index_rebuild
+state_rebuild
+native_patch
+quarantine
+```
+
+默认只报告。
+
+## 13.6 Repair Plan
+
+包含：
+
+- 问题；
+- 证据；
+- 严重程度；
+- 建议；
+- 将修改的文件；
+- 旧哈希；
+- 新预期；
+- 是否可回滚；
+- 需要的 Provider 能力；
+- 风险说明。
+
+## 13.7 回滚
+
+每次 apply 生成：
+
+```text
+repairs/<repair-id>/
+├── plan.json
+├── before/
+├── after/
+├── validation.json
+├── audit.json
+└── rollback.json
+```
+
+---
+
+## 14. 跨电脑交接
+
+## 14.1 格式
+
+```text
+<session-id>.asvpack
+```
+
+本质可为 ZIP，但扩展名独立。
+
+## 14.2 包结构
+
+```text
+manifest.json
+sessions/
+metadata/
+integrity.json
+path-map.json
+environment.json
+redaction-report.json
+git-context.json
+README.md
+```
+
+## 14.3 导出流程
+
+```text
+选择会话
+→ 检查完整性
+→ 扫描敏感信息
+→ 选择脱敏规则
+→ 生成路径映射
+→ 生成包
+→ 二次校验
+```
+
+## 14.4 导入流程
+
+```text
+读取包
+→ 校验 hash
+→ 检查 Provider
+→ 检查版本
+→ 目标路径预检
+→ 显示导入计划
+→ 原生恢复或只读导入
+→ 验证
+```
+
+## 14.5 降级策略
+
+无法原生恢复时：
+
+- 仍可导入 Vault；
+- 仍可查看；
+- 仍可搜索；
+- 仍可导出；
+- 明确标注“不可在厂商工具中继续”。
+
+## 14.6 环境信息
+
+交接包可包含非敏感信息：
+
+- OS；
+- 工作目录占位符；
+- Git remote；
+- branch；
+- commit；
+- 模型；
+- Provider 版本；
+- 必要恢复说明。
+
+不默认包含项目源码。
+
+---
+
+## 15. 搜索、查看和导出
+
+## 15.1 搜索
+
+直接复用 CCHV 全局搜索，扩展来源过滤：
+
+```text
+live
+vault
+recovery
+handoff
+```
+
+过滤项：
+
+- Provider；
+- 项目；
+- 机器；
+- 日期；
+- 模型；
+- 标签；
+- 工具；
+- 文件路径；
+- 错误；
+- 健康状态；
+- 是否已备份；
+- 是否可恢复。
+
+## 15.2 Vault 搜索接入
+
+两步实现：
+
+### 首期
+
+把 Vault 机器目录作为只读 Provider Root 交给现有 Rust Provider。
+
+### 后期
+
+为超大 Vault 增加持久化 SQLite FTS5，但不替换原始文件。
+
+## 15.3 查看体验
+
+- 长会话虚拟滚动；
+- 消息目录；
+- 工具调用折叠；
+- 代码高亮；
+- Diff；
+- 搜索命中跳转；
+- 原始 JSON 查看；
+- 原始文件打开；
+- 版本切换；
+- 来源标记；
+- 健康问题定位。
+
+## 15.4 导出预设
+
+### Clean Chat
+
+只保留：
+
+- 用户；
+- 助手；
+- 必要代码。
+
+### Technical Audit
+
+保留：
+
+- 工具；
+- 命令；
+- 错误；
+- 文件；
+- Token；
+- 时间戳。
+
+### Last N Turns
+
+只导出最近 N 回合。
+
+### Full Raw
+
+包含原始结构和元数据。
+
+### Project Handoff
+
+包含：
+
+- 摘要；
+- 决策；
+- 待办；
+- 关键命令；
+- 关键文件；
+- Git 上下文。
+
+## 15.5 输出格式
+
+- Markdown；
+- HTML；
+- JSON；
+- PDF；
+- `.asvpack`。
+
+PDF 初期可由 HTML 打印生成。
+
+---
+
+## 16. 使用量统计
+
+## 16.1 数据字段
+
+```text
+input_tokens
+output_tokens
+reasoning_tokens
+cache_creation_tokens
+cache_read_tokens
+total_tokens
+cost_actual
+cost_estimated
+currency
+model
+provider
+session
+project
+machine
+timestamp
+quality
+```
+
+## 16.2 数据质量
+
+每个值标记：
+
+```text
+actual
+provider_reported
+derived
+estimated
+unknown
+```
+
+不得把估算成本展示成实际扣费。
+
+## 16.3 统计页面
+
+- 今日；
+- 本周；
+- 本月；
+- 时间范围；
+- Provider；
+- 模型；
+- 项目；
+- 会话；
+- 机器；
+- 缓存命中；
+- 最长会话；
+- Token 消耗最高会话；
+- 估算 API 等价成本。
+
+## 16.4 价格表
+
+- 内置版本化价格表；
+- 支持本地更新；
+- 记录价格生效日期；
+- 支持用户覆盖；
+- 离线可用；
+- 无价格时显示 unknown。
+
+---
+
+## 17. AI 分析
+
+## 17.1 Provider
+
+支持：
+
+- Ollama；
+- OpenAI 兼容 API；
+- 用户自定义 endpoint；
+- 禁用 AI；
+- 将来可增加本地嵌入模型。
+
+## 17.2 隐私模式
+
+```text
+Local Only
+Redacted Remote
+Full Remote
+Disabled
+```
+
+默认：
+
+```text
+Local Only 或 Disabled
+```
+
+## 17.3 分析产物
+
+- 会话摘要；
+- 技术决策；
+- 待办；
+- 问题与解决方案；
+- 修改文件总结；
+- 命令清单；
+- 风险；
+- 未解决问题；
+- 项目交接摘要；
+- 可复用提示词；
+- 相似会话。
+
+## 17.4 引用要求
+
+每个结论必须尽量带：
+
+- session ID；
+- message ID；
+- 时间；
+- 原文片段位置；
+- 点击跳转。
+
+AI 结论不能覆盖原消息。
+
+## 17.5 增量分析
+
+- 以最后分析消息位置为水位线；
+- 活跃会话只分析新增内容；
+- Prompt 和模型版本进入缓存 key；
+- 允许重新分析；
+- 旧分析保留版本。
+
+## 17.6 成本控制
+
+- 预估 Token；
+- 限制最大输入；
+- 分块；
+- 汇总树；
+- 缓存；
+- 用户预算；
+- 超预算前确认。
+
+---
+
+## 18. UI 信息架构
+
+```text
+总览
+会话
+搜索
+Vault
+├── 备份
+├── 校验
+├── 机器
+├── 版本
+└── 存储
+健康中心
+├── Doctor
+├── 修复计划
+├── 修复记录
+└── 回滚
+恢复中心
+交接
+导出
+统计
+AI 分析
+任务中心
+设置
+关于
+```
+
+## 18.1 总览卡片
+
+- Provider 状态；
+- 上次备份；
+- Vault 容量；
+- 健康问题；
+- 最近恢复；
+- 今日 Token；
+- 失败任务。
+
+## 18.2 会话操作栏
+
+安全操作优先顺序：
+
+```text
+收藏
+标签
+备注
+导出
+备份
+Doctor
+交接
+恢复
+原生修改
+删除
+```
+
+## 18.3 健康状态
+
+```text
+Healthy
+Warning
+Broken
+Repairable
+Unsupported
+Unknown
+```
+
+## 18.4 危险操作
+
+危险按钮必须：
+
+- 使用明确动词；
+- 显示影响文件；
+- 显示是否可回滚；
+- 显示来源；
+- 需要确认；
+- 默认提供 dry-run。
+
+---
+
+## 19. 数据模型
+
+## 19.1 Provider Capability
+
+```json
+{
+  "provider_id": "codex",
+  "can_read": true,
+  "can_search": true,
+  "can_export": true,
+  "can_backup": true,
+  "can_verify": true,
+  "can_doctor": true,
+  "can_repair": true,
+  "can_rename_native": true,
+  "can_restore_single": true,
+  "can_restore_full": true
+}
+```
+
+## 19.2 SessionRef
+
+```json
+{
+  "provider_id": "codex",
+  "native_session_id": "uuid",
+  "machine_id": "leon-windows-main",
+  "source_kind": "live",
+  "source_root": "C:/Users/.../.codex",
+  "native_path": "sessions/...",
+  "vault_path": null
+}
+```
+
+## 19.3 App Metadata
+
+```json
+{
+  "session_key": "codex:machine:uuid",
+  "custom_title": "修复登录问题",
+  "tags": ["auth", "important"],
+  "note": "继续检查 refresh token",
+  "favorite": true,
+  "pinned": true,
+  "hidden": false,
+  "protected_from_cleanup": true
+}
+```
+
+## 19.4 HealthFinding
+
+```json
+{
+  "finding_id": "uuid",
+  "session_key": "codex:machine:uuid",
+  "check_id": "codex.rollout_db_parity",
+  "severity": "warning",
+  "summary": "rollout exists but DB row is missing",
+  "evidence": [],
+  "repairable": true,
+  "repair_action": "state_rebuild"
+}
+```
+
+## 19.5 Task
+
+```json
+{
+  "task_id": "uuid",
+  "operation": "sync",
+  "status": "running",
+  "progress": 0.42,
+  "started_at": "...",
+  "report_path": null,
+  "error_code": null
+}
+```
+
+---
+
+## 20. 测试与验收
+
+## 20.1 本地测试
+
+### Python Core
+
+```bash
+python -m compileall -q scripts tests
+python -m unittest discover -s tests -v
+```
+
+### Desktop
+
+```bash
+pnpm install
+pnpm lint
+pnpm test
+pnpm build
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo test --manifest-path src-tauri/Cargo.toml
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+pnpm tauri build
+```
+
+根据本地环境选择必要命令，不要求每次开发都打安装包。
+
+## 20.2 无 Actions
+
+- 不创建 `.github/workflows/`；
+- 不从上游带入 Workflow；
+- 不运行或重跑 Workflow；
+- PR 只记录本地测试结果；
+- 未执行的测试明确说明；
+- 不伪造通过状态。
+
+## 20.3 Fixture
+
+每个 Provider 至少包含匿名样本：
+
+- 正常；
+- 活跃增长；
+- 归档；
+- 尾部损坏；
+- 重复 ID；
+- 索引缺失；
+- 旧版本；
+- Windows 路径；
+- Linux 路径；
+- SQLite WAL。
+
+## 20.4 集成测试
+
+- 原生 Provider 浏览；
+- Vault Provider 浏览；
+- 搜索；
+- 增量备份；
+- 重复备份；
+- 冲突；
+- 验证；
+- Doctor；
+- Repair dry-run；
+- Repair apply；
+- 回滚；
+- Codex 恢复；
+- Handoff 导出/导入；
+- 导出；
+- AI 隐私阻断。
+
+## 20.5 安全测试
+
+- 路径穿越；
+- symlink/junction 逃逸；
+- 非空恢复目录；
+- Vault marker 错误；
+- hash 篡改；
+- SQLite 锁；
+- 移动盘中断；
+- Sidecar 被取消；
+- 敏感信息检测；
+- 危险命令注入。
+
+---
+
+## 21. 五阶段开发计划
+
+## 阶段 0：开源底座导入与基线稳定
+
+### 目标
+
+建立可持续维护的桌面 Fork，并确认本地 Windows 构建链路。
+
+### 交付
+
+- 创建 CCHV Fork；
+- 固定上游版本和提交；
+- 保留 MIT 许可证；
+- 新增第三方声明；
+- 删除 GitHub Actions Workflow；
+- 修改产品名、应用 ID、图标占位和数据目录；
+- 默认简体中文；
+- 检查并关闭非必要网络请求；
+- 本地运行前端、Rust 测试和 Tauri 构建；
+- 记录上游同步流程；
+- 建立 Sidecar 最小调用 Demo。
+
+### 验收
+
+- Windows 可本地启动；
+- 能浏览现有会话；
+- 中文可用；
+- 不与原 CCHV 数据目录冲突；
+- 仓库没有 Workflow；
+- 能调用 `vault-core list-apps` 并显示 JSON 结果。
+
+### 风险
+
+- 上游已有功能较多，改品牌时避免大范围重构；
+- 首期不重写 Provider；
+- 不立即迁移 Python 到 Rust。
+
+---
+
+## 阶段 1：接入备份、校验和 Codex 恢复
+
+### 目标
+
+让现有 Vault Core 成为桌面软件中的可靠备份引擎。
+
+### 交付
+
+- Vault 路径选择；
+- machine ID 设置；
+- Provider 到 Python Adapter 映射；
+- inspect；
+- dry-run；
+- sync；
+- verify；
+- 任务进度；
+- 报告查看；
+- 移动硬盘不可用提示；
+- Codex 单会话恢复；
+- Codex 整库恢复；
+- 恢复启动脚本；
+- Vault 会话作为只读来源显示。
+
+### 验收
+
+- 用户不使用命令行即可备份；
+- 备份不会移动或删除源文件；
+- 验证失败有明确报告；
+- Codex 恢复不覆盖当前 `.codex`；
+- 任务中断不留下已发布半成品；
+- UI 能区分 live 和 vault。
+
+---
+
+## 阶段 2：健康检查、安全修复和会话管理增强
+
+### 目标
+
+从“备份查看器”升级为“会话保险箱”。
+
+### 交付
+
+- Vault 标题、标签、备注、收藏、固定；
+- Provider 能力声明；
+- 健康中心；
+- 通用 Doctor；
+- Claude Doctor；
+- Codex Doctor；
+- Repair Plan；
+- Dry-run；
+- 修复副本；
+- Diff/影响预览；
+- apply；
+- 回读验证；
+- rollback；
+- 审计日志；
+- Codex 原生重命名安全增强；
+- 软删除和回收站。
+
+### 验收
+
+- 默认 Doctor 不改文件；
+- 所有修复有计划；
+- 所有原生修改有备份；
+- 修复失败可以回滚；
+- 不支持 Provider 的按钮被禁用；
+- 用户能看到具体问题、证据和处理结果。
+
+---
+
+## 阶段 3：导出、交接和 Vault 搜索增强
+
+### 目标
+
+让会话可读、可带走、可在新电脑接续。
+
+### 交付
+
+- Markdown；
+- HTML；
+- JSON；
+- PDF；
+- 导出预设；
+- 敏感信息扫描；
+- `.asvpack`；
+- Handoff 预检；
+- path-map；
+- integrity；
+- 只读导入；
+- Codex 原生交接；
+- Vault 大规模搜索；
+- 来源、机器、版本筛选；
+- 导入导出审计。
+
+### 验收
+
+- 同一会话导出稳定可重复；
+- 交接包被篡改时阻止导入；
+- 检测到敏感信息时默认阻止；
+- 新电脑没有原生支持时仍可只读查看；
+- Codex 支持交接后隔离继续；
+- 导出不会修改原始会话。
+
+---
+
+## 阶段 4：统一统计、AI 分析和产品化完善
+
+### 目标
+
+补齐统计和知识复用能力，形成日常软件。
+
+### 交付
+
+- 统一 Usage 模型；
+- actual / estimated 标签；
+- 价格表；
+- Provider/模型/项目/会话统计；
+- Ollama；
+- OpenAI 兼容 API；
+- 隐私模式；
+- 摘要；
+- 决策；
+- 待办；
+- 问题解决；
+- 项目交接摘要；
+- 引用跳转；
+- 增量分析；
+- 分析缓存；
+- 成本预算；
+- 设置迁移；
+- 便携版 Windows 构建；
+- 安装包本地构建说明。
+
+### 验收
+
+- 统计口径可追踪；
+- 无数据时不伪造；
+- AI 默认不发送到外部；
+- 远程分析前显示将发送的范围；
+- AI 输出能跳回来源；
+- 删除派生分析不影响原会话；
+- 软件离线仍能浏览、搜索、备份和恢复。
+
+---
+
+## 22. 首个可用版本
+
+首个真正可日常使用版本由 **阶段 0 + 阶段 1 + 阶段 2 的基础部分**组成：
+
+```text
+成熟桌面界面
++ 多工具会话查看
++ 全局搜索
++ 基础统计
++ 增量备份
++ 完整性校验
++ Vault 来源查看
++ 标题/标签/备注
++ 基础 Doctor
++ Codex 隔离恢复
++ Markdown/HTML 导出
+```
+
+首版暂不强制：
+
+- 所有 Provider 修复；
+- 所有 Provider 原生恢复；
+- 完整 AI 分析；
+- PDF 精排；
+- 云端同步；
+- 团队功能。
+
+---
+
+## 23. 风险与控制
+
+## 23.1 上游漂移
+
+风险：
+
+- Provider 结构变更；
+- Tauri 配置变更；
+- React 状态结构变更；
+- 上游 UI 大改。
+
+控制：
+
+- 固定基准提交；
+- 减少侵入式修改；
+- 我们的功能放独立模块；
+- 记录 upstream patch；
+- 每次同步手动验证。
+
+## 23.2 双解析体系
+
+风险：
+
+- Rust Provider 和 Python Adapter 对路径或 ID 定义不同。
+
+控制：
+
+- 建立 Provider/Adapter 映射契约；
+- 共享匿名 Fixture；
+- 同一 Fixture 对比结果；
+- Rust 负责读取展示；
+- Python 负责备份和恢复；
+- 不让两套代码都修改原生数据。
+
+## 23.3 Sidecar 打包
+
+风险：
+
+- Python 运行时体积；
+- 杀毒软件误报；
+- 路径和权限；
+- 跨平台差异。
+
+控制：
+
+- 首先支持 Windows x64；
+- Sidecar 版本握手；
+- 独立日志；
+- 便携目录；
+- 无 shell 拼接；
+- 后续逐步 Rust 化。
+
+## 23.4 厂商格式变化
+
+控制：
+
+- Provider 健康状态；
+- schema/version 探测；
+- 不支持时只读降级；
+- 不猜测写入；
+- Fixture 回归；
+- 修复能力默认关闭。
+
+## 23.5 许可证
+
+控制：
+
+- CCHV MIT 声明；
+- ccusage MIT 声明；
+- 不复制 Codex Manager GPL 代码；
+- `THIRD_PARTY_NOTICES.md`；
+- 发布前许可证扫描。
+
+## 23.6 数据破坏
+
+控制：
+
+- 默认只读；
+- Dry-run；
+- staging；
+- 原子发布；
+- before snapshot；
+- rollback；
+- hash；
+- 审计；
+- 真实用户目录禁止用于破坏性测试。
+
+---
+
+## 24. Definition of Done
 
 一个功能只有满足以下条件才算完成：
 
-- 有明确适用范围；
-- 有不支持范围；
-- 不破坏原始数据；
-- 有失败和中断处理；
-- 有可重复本地测试；
-- 危险操作有 dry-run；
-- 结果可验证；
-- 有用户可理解的报告；
+- 明确当前支持范围；
+- 明确不支持范围；
+- 不破坏原始会话；
+- 有中断和失败处理；
+- 有本地可重复测试；
+- 危险操作支持 dry-run；
+- 有结果验证；
+- 有用户可读报告；
+- 有 UI 错误提示；
 - 有文档；
+- 有许可证检查；
 - 没有擅自新增或触发 GitHub Actions。
 
-适配器相关功能还必须：
+Provider 相关能力还必须：
 
-- 有上游源码或官方文档证据；
+- 有官方源码或文档证据；
 - 有匿名化 Fixture；
-- 有真实结构测试；
+- 有 Windows/Linux 路径测试；
 - 不复制凭据；
-- 不把推测标记为已支持。
+- 不把实验性路径称为稳定；
+- 原生修改和恢复必须单独能力门控。
 
 ---
 
-## 29. 建议下一步
+## 25. 下一步
 
-下一次代码开发应从“阶段 0：核心契约升级”开始，先完成：
+下一次代码开发从 **阶段 0** 开始：
 
-1. 新增标准化数据模型；
-2. 新增 Catalog SQLite schema；
-3. 为适配器增加能力声明；
-4. 实现 Codex 标准解析器；
-5. 实现 Catalog 重建命令；
-6. 实现最小 CLI 搜索；
-7. 为上述功能增加本地测试。
+1. 创建桌面 Fork；
+2. 固定 CCHV v1.22.0 基线；
+3. 删除上游 Workflows；
+4. 保留许可证并增加第三方声明；
+5. 本地跑通 Windows Tauri；
+6. 修改应用名和数据目录；
+7. 添加 Vault Core Sidecar 最小调用；
+8. 在设置页显示 Core 版本和适配器列表；
+9. 保存本地测试结果；
+10. 不进行 GitHub Actions 远端构建。
 
-在统一目录和解析器稳定之前，不应先制作复杂 UI 或 AI 分析，否则会出现每个页面直接读取不同厂商原始格式、后续难以维护的问题。
+在阶段 0 验收通过前，不应同时开发 Doctor、Repair、Handoff 和 AI，以免底座和接口尚未稳定时产生大量返工。
