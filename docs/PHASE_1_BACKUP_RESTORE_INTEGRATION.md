@@ -79,7 +79,7 @@ started
 - [ ] 完成本地 Python、Rust、前端和端到端测试；
 - [ ] 更新阶段 1 验收报告。
 
-说明：Rust 参数验证、命令预览和协议解析骨架已经加入，但进程启动、取消、超时和 Tauri 运行时注册尚未完成，因此不能将“Rust Sidecar 启动”标记完成。
+说明：Rust 参数验证、命令预览和协议解析骨架已经加入 `commands::vault_sidecar` 并参与 Rust 编译，但尚未加入主 Tauri `invoke_handler`。因此前端 API 客户端当前只是类型与调用约定，运行时调用将在本任务包的下一步注册后才可用。
 
 ## 任务包顺序
 
