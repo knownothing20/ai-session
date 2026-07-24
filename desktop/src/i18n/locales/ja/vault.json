@@ -1,0 +1,65 @@
+{
+  "vault": {
+    "menu": "セッション保管庫",
+    "title": "AI セッション保管庫",
+    "description": "稼働中のアプリデータを変更せずに、ローカルの AI コーディングセッションをバックアップ、検証、安全に復元します。",
+    "configuration": "保管庫の設定",
+    "sidecarAvailable": "Vault Core は利用可能です",
+    "sidecarUnavailable": "Vault Core は利用できません",
+    "loadingApplications": "アプリを検出しています…",
+    "fields": {
+      "application": "アプリ",
+      "machineId": "マシン ID",
+      "vaultRoot": "保管庫フォルダー",
+      "sourceRoot": "ソース上書き（任意）",
+      "restoreScope": "復元範囲",
+      "sessionId": "セッション ID",
+      "restoreRoot": "新しい復元フォルダー"
+    },
+    "placeholders": {
+      "machineId": "例: leon-windows-main",
+      "sourceRoot": "空欄の場合はアプリの既定保存先を使用",
+      "sessionId": "Codex ネイティブセッション UUID"
+    },
+    "actions": {
+      "inspect": "ソースを検査",
+      "layout": "配置をプレビュー",
+      "previewBackup": "バックアップ予行",
+      "backup": "今すぐバックアップ",
+      "verify": "保管庫を検証",
+      "previewRestore": "復元予行",
+      "restore": "復元コピーを作成",
+      "cancel": "タスクを取消",
+      "close": "閉じる"
+    },
+    "restore": {
+      "title": "隔離ネイティブ復元",
+      "unsupported": "選択したアプリはネイティブ復元に未対応です",
+      "session": "1 セッション",
+      "full": "完全アーカイブ"
+    },
+    "task": {
+      "title": "タスクとレポート",
+      "running": "{{operation}} を実行中",
+      "completed": "操作が完了しました",
+      "output": "出力先",
+      "commandPreview": "安全なコマンドプレビュー",
+      "events": "プロトコルイベント",
+      "noEvents": "イベントはまだありません",
+      "recent": "最近のタスク"
+    },
+    "errors": {
+      "unknown": "不明な保管庫エラーが発生しました",
+      "appRequired": "アプリを選択してください",
+      "vaultRequired": "保管庫フォルダーを入力してください",
+      "restoreUnsupported": "選択したアプリはネイティブ復元に未対応です",
+      "restoreRootRequired": "まだ存在しない新しい復元フォルダーを入力してください",
+      "sessionRequired": "単一セッション復元にはネイティブセッション ID が必要です"
+    },
+    "confirm": {
+      "sync": "実際の増分バックアップを開始しますか？稼働中のアプリデータは読み取り専用のままです。",
+      "restore": "隔離復元フォルダーを作成しますか？対象フォルダーは未作成である必要があります。",
+      "closeActive": "保管庫タスクが実行中です。取消して閉じますか？"
+    }
+  }
+}
