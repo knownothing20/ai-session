@@ -6,6 +6,10 @@ import type {
   VaultSidecarStatus,
 } from '@/types/vaultSidecar';
 
+/**
+ * These commands are implemented in Rust during phase 1 task package 1.
+ * They become callable after registration in the Tauri invoke handler.
+ */
 export async function getVaultSidecarStatus(): Promise<VaultSidecarStatus> {
   return invoke<VaultSidecarStatus>('get_vault_sidecar_status');
 }
