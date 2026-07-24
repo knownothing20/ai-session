@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ctypes
 import datetime as dt
+import errno
 import hashlib
 import json
 import os
@@ -98,6 +100,44 @@ def atomic_write_json(path: Path, value: object, dry_run: bool = False) -> None:
         temp_path.unlink(missing_ok=True)
 
 
+def _process_exists(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        process_query_limited_information = 0x1000
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(
+            process_query_limited_information,
+            False,
+            pid,
+        )
+        if handle:
+            kernel32.CloseHandle(handle)
+            return True
+        # Access denied means the process exists but cannot be queried. Invalid
+        # parameter means no process currently owns this PID.
+        return ctypes.get_last_error() == 5
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError as exc:
+        return exc.errno == errno.EPERM
+    return True
+
+
+def _lock_owner_is_alive(path: Path) -> bool | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        pid = int(payload["pid"])
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        return None
+    return _process_exists(pid)
+
+
 class VaultLock:
     def __init__(self, path: Path, dry_run: bool):
         self.path = path
@@ -109,9 +149,14 @@ class VaultLock:
             return self
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if self.path.exists():
+            owner_alive = _lock_owner_is_alive(self.path)
             age = dt.datetime.now().timestamp() - self.path.stat().st_mtime
-            if age < 12 * 3600:
+            if owner_alive is True:
+                raise SyncError(f"Vault is locked by an active process: {self.path}")
+            if owner_alive is None and age < 12 * 3600:
                 raise SyncError(f"Vault is locked: {self.path}")
+            # A cancelled/killed Sidecar cannot run __exit__. Reclaim its lock as
+            # soon as its PID is confirmed dead instead of waiting 12 hours.
             self.path.unlink(missing_ok=True)
         try:
             descriptor = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
