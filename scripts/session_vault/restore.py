@@ -10,11 +10,33 @@ from pathlib import Path
 
 from .archive import LAYOUT_VERSION, SCHEMA_VERSION, load_manifest
 from .models import AdapterSpec
+from .protocol import ProgressCallback, make_progress
 from .utils import SyncError, atomic_copy, atomic_write_json, hash_file, utc_now
 
 RESTORE_MARKER = ".agent-session-restore.json"
 CODEX_RESTORE_STRATEGY = "codex-rollout-backfill"
 _ALLOWED_CODEX_COLLECTIONS = {"sessions", "archived_sessions"}
+
+
+def _progress(
+    callback: ProgressCallback | None,
+    stage: str,
+    message: str,
+    *,
+    current: int | None = None,
+    total: int | None = None,
+    details: dict | None = None,
+) -> None:
+    if callback is not None:
+        callback(
+            make_progress(
+                stage,
+                message,
+                current=current,
+                total=total,
+                details=details,
+            )
+        )
 
 
 def _is_within(path: Path, root: Path) -> bool:
@@ -202,6 +224,7 @@ def restore_archive(
     scope: str = "session",
     session_id: str | None = None,
     dry_run: bool = False,
+    progress: ProgressCallback | None = None,
 ) -> dict:
     """Restore Codex transcripts into an isolated, rebuildable CODEX_HOME.
 
@@ -209,6 +232,12 @@ def restore_archive(
     creates a fresh database and backfills it from restored rollout JSONL files.
     """
 
+    _progress(
+        progress,
+        "restore-prepare",
+        "Preparing isolated Codex restore",
+        details={"scope": scope, "dry_run": dry_run},
+    )
     if spec.restore_strategy != CODEX_RESTORE_STRATEGY:
         raise SyncError(f"Adapter {spec.app_id} does not support native restore")
     machine_root = machine_root.expanduser().resolve()
@@ -257,7 +286,15 @@ def restore_archive(
     }
 
     verified_sessions: list[tuple[Path, dict]] = []
-    for item in selected:
+    total_sessions = len(selected)
+    _progress(
+        progress,
+        "restore-verify",
+        f"Verifying {total_sessions} selected session artifacts",
+        current=0,
+        total=total_sessions,
+    )
+    for index, item in enumerate(selected, start=1):
         source = _verified_source(
             machine_root,
             str(item.get("vault_path", "")),
@@ -265,6 +302,14 @@ def restore_archive(
             f"session {item.get('native_session_id')}",
         )
         verified_sessions.append((source, item))
+        _progress(
+            progress,
+            "restore-verify",
+            f"Verified session {index} of {total_sessions}",
+            current=index,
+            total=total_sessions,
+            details={"native_session_id": item.get("native_session_id")},
+        )
 
     metadata = manifest.get("metadata", {})
     report["sqlite_snapshots_skipped"] = sum(
@@ -277,6 +322,17 @@ def restore_archive(
         report["planned_launch_command"] = (
             f"codex resume {session_id}" if session_id else "codex resume"
         )
+        _progress(
+            progress,
+            "restore-plan",
+            "Restore dry-run completed",
+            current=1,
+            total=1,
+            details={
+                "sessions_selected": len(selected),
+                "sqlite_snapshots_skipped": report["sqlite_snapshots_skipped"],
+            },
+        )
         return report
 
     restore_root.parent.mkdir(parents=True, exist_ok=True)
@@ -288,7 +344,14 @@ def restore_archive(
         raise SyncError(f"Unexpected staging path already exists: {stage_root}")
     stage_root.mkdir(parents=True)
     try:
-        for source, item in verified_sessions:
+        _progress(
+            progress,
+            "restore-copy",
+            f"Restoring {len(verified_sessions)} session artifacts",
+            current=0,
+            total=len(verified_sessions),
+        )
+        for index, (source, item) in enumerate(verified_sessions, start=1):
             destination = _session_destination(
                 stage_root, item, activate_archived=(scope == "session")
             )
@@ -296,10 +359,31 @@ def restore_archive(
             if hash_file(destination) != item.get("sha256"):
                 raise SyncError(f"Restored session hash mismatch: {destination}")
             report["sessions_restored"] += 1
+            _progress(
+                progress,
+                "restore-copy",
+                f"Restored session {index} of {len(verified_sessions)}",
+                current=index,
+                total=len(verified_sessions),
+                details={
+                    "native_session_id": item.get("native_session_id"),
+                    "destination": str(destination),
+                },
+            )
 
-        for name, item in metadata.items():
-            if _metadata_kind(name, item) != "index":
-                continue
+        index_entries = [
+            (name, item)
+            for name, item in metadata.items()
+            if _metadata_kind(name, item) == "index"
+        ]
+        _progress(
+            progress,
+            "restore-indexes",
+            f"Processing {len(index_entries)} index artifacts",
+            current=0,
+            total=len(index_entries),
+        )
+        for index, (name, item) in enumerate(index_entries, start=1):
             restored_name: str | None
             if scope == "session":
                 restored_name = (
@@ -315,7 +399,19 @@ def restore_archive(
                 )
             if restored_name:
                 report["indexes_restored"].append(restored_name)
+            _progress(
+                progress,
+                "restore-indexes",
+                f"Processed index {index} of {len(index_entries)}",
+                current=index,
+                total=len(index_entries),
+                details={
+                    "name": name,
+                    "restored": restored_name is not None,
+                },
+            )
 
+        _progress(progress, "restore-launchers", "Writing recovery launchers")
         launchers = _write_launchers(
             stage_root,
             restore_root,
@@ -339,8 +435,25 @@ def restore_archive(
             "Run start-codex-recovery.cmd on Windows or "
             "start-codex-recovery.sh on Linux/macOS.\n",
         )
+        _progress(
+            progress,
+            "restore-publish",
+            "Publishing isolated recovery directory",
+        )
         os.replace(stage_root, restore_root)
     except Exception:
         shutil.rmtree(stage_root, ignore_errors=True)
         raise
+    _progress(
+        progress,
+        "restore-complete",
+        "Codex restore completed",
+        current=1,
+        total=1,
+        details={
+            "sessions_restored": report["sessions_restored"],
+            "indexes_restored": len(report["indexes_restored"]),
+            "report_path": report["report_path"],
+        },
+    )
     return report
