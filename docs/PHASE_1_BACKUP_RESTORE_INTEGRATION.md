@@ -3,7 +3,7 @@
 > 阶段：1 / 共 5 阶段  
 > 本阶段完成后剩余：3 个阶段  
 > 状态：进行中  
-> 当前任务包：第 1 个任务包 — Sidecar 协议与调用骨架
+> 当前进度：线上实现已形成完整闭环，等待 Windows 本地自动验证与人工桌面验收
 
 ## 阶段目标
 
@@ -15,7 +15,7 @@
 - 完整性校验；
 - Codex 单会话隔离恢复；
 - Codex 整库隔离恢复；
-- 任务进度、结构化报告和错误信息。
+- 任务进度、取消、超时、结构化报告和错误信息。
 
 本阶段不开发 Doctor、Repair、跨电脑交接或 AI 分析，这些属于后续阶段。
 
@@ -23,9 +23,9 @@
 
 ```text
 Desktop UI (React)
-    ↓ Tauri Command
+    ↓ Tauri Command / Event
 Rust Sidecar Bridge
-    ↓ JSONL over stdin/stdout
+    ↓ JSONL over stdout
 Python Vault Core
     ↓
 AgentSessionVault / Recovery Directory
@@ -36,9 +36,11 @@ AgentSessionVault / Recovery Directory
 1. 不复制一套新的备份实现到 Rust；
 2. Python Core 仍是备份、校验和恢复的唯一事实源；
 3. UI 不直接修改厂商原生会话目录；
-4. 所有写入操作必须支持 dry-run 或预检；
+4. 所有写入操作支持 dry-run 或预检；
 5. 任务输出采用版本化 JSONL 事件协议；
-6. 不创建或触发 GitHub Actions。
+6. 进程使用参数数组启动，不通过 shell；
+7. 只有 `completed` 终态可判定成功；
+8. 不创建或触发 GitHub Actions。
 
 ## Sidecar Protocol v1
 
@@ -65,64 +67,95 @@ started
 --request-id <uuid>
 ```
 
-## 主要交付物
+## 当前实现
 
-- [x] 定义 Sidecar JSONL 协议与 schema 版本；
-- [x] 为 `vault_sync.py` 增加适合桌面调用的机器可读终态输出；
-- [ ] 生成 Windows 可执行 Sidecar 或确定 Python 运行时打包方式；
-- [ ] Rust 侧实现 Sidecar 启动、参数校验、取消和超时；
-- [ ] React 侧新增 Vault 设置与任务中心；
-- [ ] UI 支持 inspect、layout、sync、verify；
-- [ ] UI 支持 Codex session/full restore；
-- [ ] UI 显示报告路径、警告、排除项和验证结果；
-- [ ] 所有危险操作有确认和 dry-run；
-- [ ] 完成本地 Python、Rust、前端和端到端测试；
-- [ ] 更新阶段 1 验收报告。
+### Python Vault Core
 
-说明：Rust 参数验证、命令预览和协议解析骨架已经加入 `commands::vault_sidecar` 并参与 Rust 编译，但尚未加入主 Tauri `invoke_handler`。因此前端 API 客户端当前只是类型与调用约定，运行时调用将在本任务包的下一步注册后才可用。
+- [x] `pretty`、`json`、`jsonl` 输出模式；
+- [x] started、progress、completed、failed；
+- [x] 应用发现进度；
+- [x] inspect 和 layout 进度；
+- [x] 会话扫描、复制、跳过、冲突和重复检测进度；
+- [x] SQLite Backup API 和索引快照进度；
+- [x] 哈希与 SQLite `quick_check` 校验进度；
+- [x] Codex session/full restore 验证、复制、索引和发布进度；
+- [x] 默认 CLI 行为兼容；
+- [x] 取消后残留锁按 PID 自动回收；
+- [x] Windows SQLite 句柄显式关闭。
 
-## 任务包顺序
+### Rust / Tauri
 
-### 第 1 个任务包：协议与调用骨架（进行中）
+- [x] operation、scope、路径字符串和超时验证；
+- [x] `Command::args` 无 shell 参数构造；
+- [x] Sidecar 状态与 Python 可用性检测；
+- [x] 子进程启动、stdout JSONL 逐行解析和 stderr 收集；
+- [x] 协议名、版本、request ID、operation、sequence 和终态校验；
+- [x] 任务注册表；
+- [x] 取消、超时、kill 和进程清理；
+- [x] 异常退出和缺失终态合成 failed 事件；
+- [x] 5 个 Tauri Command 注册；
+- [x] CCHV 上游运行时保持在 `lib_upstream.rs`，由 `build.rs` 在编译时注入 Vault Command；
+- [x] 上游 handler 结构变化时构建明确失败。
 
-- [x] 协议和威胁模型；
-- [x] Python Core started/completed/failed JSONL；
-- [x] Python 协议测试；
-- [x] Rust 请求验证、参数数组和事件解析；
-- [x] 前端共享类型和 API 客户端骨架；
-- [ ] Tauri invoke handler 注册；
-- [ ] Windows 本地静态与协议测试。
+### React UI
 
-### 第 2 个任务包：进程执行与任务生命周期
+- [x] 设置菜单“会话保险箱”入口；
+- [x] Vault Root、machine ID、source override 持久化；
+- [x] 应用发现与能力显示；
+- [x] inspect、layout；
+- [x] sync dry-run 和真实增量备份；
+- [x] verify；
+- [x] Codex 单会话和整库 restore dry-run；
+- [x] Codex 单会话和整库真实恢复；
+- [x] 写入操作确认；
+- [x] 实时进度、事件、结果、错误、命令预览和报告位置；
+- [x] 取消按钮和运行任务恢复；
+- [x] 英文、韩文、日文、简体中文、繁体中文。
 
-- Rust 安全启动 Sidecar；
-- stdout 逐行解析；
-- stderr 限长收集；
-- progress 事件；
-- 取消、超时、进程清理；
-- 任务状态存储。
+## 运行时方案
 
-### 第 3 个任务包：Vault 设置与备份校验 UI
+阶段 1 使用受控系统 Python：
 
-- Vault 路径和 machine ID；
-- app discovery；
-- inspect / layout；
-- sync dry-run / apply；
-- verify；
-- 报告与错误展示。
+```text
+默认：python
+解释器覆盖：AI_SESSION_VAULT_PYTHON
+Sidecar 覆盖：AI_SESSION_VAULT_SIDECAR
+```
 
-### 第 4 个任务包：Codex 恢复 UI
+这满足阶段 1 的 Python 运行时方案。正式安装后免 Python 的独立可执行 Sidecar、代码签名和 Tauri `externalBin` 属于阶段 4 产品化，详见：
 
-- session / full restore；
-- restore 路径预检；
-- 危险操作确认；
-- 启动器和报告展示。
+- `docs/PHASE_1_RUNTIME_STRATEGY.md`
 
-### 第 5 个任务包：打包、集成测试和阶段验收
+## 测试与验收
 
-- Windows Sidecar 打包；
-- 本地 Python、Rust、前端和端到端验证；
-- 阶段 1 验收报告。
+已加入：
+
+- `tests/test_sidecar_protocol.py`；
+- `tests/test_locking.py`；
+- `tests/test_tauri_handler_injection.py`；
+- Windows 安全的 Core、Adapter 和 Restore 测试；
+- `desktop/src/test/vaultSidecarApi.test.ts`；
+- `desktop/src/test/VaultConsoleModal.test.tsx`；
+- `scripts/phase1_smoke.py` 完整 Sidecar 冒烟；
+- `scripts/validate_phase1.ps1` Windows 一键验证；
+- `docs/PHASE_1_ACCEPTANCE_REPORT.md`。
+
+本地自动验证：
+
+```powershell
+powershell -ExecutionPolicy Bypass `
+  -File .\scripts\validate_phase1.ps1
+```
+
+正式人工验收：
+
+```powershell
+powershell -ExecutionPolicy Bypass `
+  -File .\scripts\validate_phase1.ps1 `
+  -Launch
+```
+
+当前在线环境不能运行 Windows、Cargo、Tauri 和真实桌面窗口，因此测试文件已提交不等于测试通过。阶段 1 保持“进行中”，直到 Windows 自动验证与人工操作矩阵全部通过。
 
 ## 阶段 1 Definition of Done
 
@@ -132,8 +165,10 @@ started
 - UI 能完成 Codex 单会话和整库隔离恢复；
 - UI 与 Python Core 使用版本化结构化协议；
 - 任务可取消，失败不会留下被误判为成功的结果；
+- 取消造成的残留锁可安全回收；
 - 凭据、OAuth、日志和缓存仍被排除；
 - 现有 CLI 保持兼容；
-- Windows 本地构建与集成验证通过；
+- Windows 本地自动验证通过；
+- Windows 人工桌面操作矩阵通过；
 - 未创建或触发 GitHub Actions；
 - 阶段 1 验收结果已写入仓库。
