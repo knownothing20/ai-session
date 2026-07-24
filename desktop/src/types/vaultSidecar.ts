@@ -51,7 +51,7 @@ export interface VaultSidecarError {
   code: string;
   message: string;
   retryable: boolean;
-  details?: Record<string, unknown>;
+  details?: unknown;
 }
 
 export interface VaultSidecarEvent<TData = unknown> {
