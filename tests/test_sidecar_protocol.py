@@ -11,6 +11,7 @@ from scripts.session_vault.protocol import (
     PROTOCOL_NAME,
     PROTOCOL_VERSION,
     SidecarEmitter,
+    make_progress,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,17 +28,47 @@ class SidecarEmitterTests(unittest.TestCase):
         )
 
         emitter.started({"dry_run": True})
-        emitter.progress({"phase": "scan", "current": 1, "total": 2})
+        emitter.progress(stage="scan", message="Scanning", current=1, total=2)
         emitter.completed({"ok": True})
 
         events = [json.loads(line) for line in stream.getvalue().splitlines()]
         self.assertEqual([item["sequence"] for item in events], [1, 2, 3])
-        self.assertEqual([item["event"] for item in events], ["started", "progress", "completed"])
+        self.assertEqual(
+            [item["event"] for item in events],
+            ["started", "progress", "completed"],
+        )
+        self.assertEqual(events[1]["data"]["stage"], "scan")
+        self.assertEqual(events[1]["data"]["current"], 1)
         for event in events:
             self.assertEqual(event["protocol"], PROTOCOL_NAME)
             self.assertEqual(event["protocol_version"], PROTOCOL_VERSION)
             self.assertEqual(event["request_id"], "request-123")
             self.assertEqual(event["operation"], "sync")
+
+    def test_progress_callback_emits_structured_payload(self):
+        stream = io.StringIO()
+        emitter = SidecarEmitter("verify", request_id="verify-1", stream=stream)
+        callback = emitter.progress_callback()
+        callback(
+            make_progress(
+                "verify",
+                "Verified artifact",
+                current=2,
+                total=4,
+                details={"status": "ok"},
+            )
+        )
+
+        event = json.loads(stream.getvalue())
+        self.assertEqual(event["event"], "progress")
+        self.assertEqual(event["data"]["stage"], "verify")
+        self.assertEqual(event["data"]["details"]["status"], "ok")
+
+    def test_make_progress_rejects_invalid_counts(self):
+        with self.assertRaises(ValueError):
+            make_progress("verify", "bad", current=3, total=2)
+        with self.assertRaises(ValueError):
+            make_progress("", "missing stage")
 
     def test_failed_event_has_structured_error(self):
         stream = io.StringIO()
@@ -64,7 +95,7 @@ class SidecarCliTests(unittest.TestCase):
             text=True,
         )
 
-    def test_list_apps_jsonl_has_started_and_completed(self):
+    def test_list_apps_jsonl_has_progress_and_terminal_event(self):
         result = self.run_cli(
             "--mode",
             "list-apps",
@@ -76,9 +107,13 @@ class SidecarCliTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         events = [json.loads(line) for line in result.stdout.splitlines()]
-        self.assertEqual([item["event"] for item in events], ["started", "completed"])
+        self.assertEqual(
+            [item["event"] for item in events],
+            ["started", "progress", "progress", "completed"],
+        )
         self.assertEqual(events[0]["request_id"], "desktop-request")
-        adapters = {item["app_id"] for item in events[1]["data"]["adapters"]}
+        self.assertEqual(events[1]["data"]["stage"], "discover")
+        adapters = {item["app_id"] for item in events[-1]["data"]["adapters"]}
         self.assertIn("codex", adapters)
         self.assertIn("claude-code", adapters)
 
