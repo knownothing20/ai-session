@@ -10,6 +10,7 @@ interface ModalState {
   feedback: boolean;
   folderSelector: boolean;
   globalSearch: boolean;
+  vaultConsole: boolean;
   folderSelectorMode: FolderSelectorMode;
   feedbackPrefill: FeedbackPrefill | null;
 }
@@ -42,6 +43,7 @@ export const ModalProvider: React.FC<{ children: ReactNode }> = ({
     feedback: false,
     folderSelector: false,
     globalSearch: false,
+    vaultConsole: false,
     folderSelectorMode: "notFound",
     feedbackPrefill: null,
   });
@@ -50,7 +52,7 @@ export const ModalProvider: React.FC<{ children: ReactNode }> = ({
     (modal: ModalType): boolean => {
       return modalState[modal];
     },
-    [modalState]
+    [modalState],
   );
 
   const openModal = useCallback(
@@ -59,7 +61,7 @@ export const ModalProvider: React.FC<{ children: ReactNode }> = ({
       options?: {
         mode?: FolderSelectorMode;
         feedbackPrefill?: FeedbackPrefill;
-      }
+      },
     ) => {
       closeAllGenerationRef.current += 1;
       const activeElement = document.activeElement;
@@ -68,7 +70,10 @@ export const ModalProvider: React.FC<{ children: ReactNode }> = ({
         focusOriginsRef.current[modal] = [...current, activeElement];
       }
 
-      openOrderRef.current = [...openOrderRef.current.filter((item) => item !== modal), modal];
+      openOrderRef.current = [
+        ...openOrderRef.current.filter((item) => item !== modal),
+        modal,
+      ];
 
       setModalState((prev) => ({
         ...prev,
@@ -80,20 +85,23 @@ export const ModalProvider: React.FC<{ children: ReactNode }> = ({
         }),
       }));
     },
-    []
+    [],
   );
 
-  const closeModal = useCallback((modal: ModalType) => {
-    closeAllGenerationRef.current += 1;
-    openOrderRef.current = openOrderRef.current.filter((item) => item !== modal);
-    setModalState((prev) => ({
-      ...prev,
-      [modal]: false,
-      ...(modal === "feedback" && { feedbackPrefill: null }),
-    }));
-    restoreFocus(modal);
-    focusOriginsRef.current[modal] = [];
-  }, [restoreFocus]);
+  const closeModal = useCallback(
+    (modal: ModalType) => {
+      closeAllGenerationRef.current += 1;
+      openOrderRef.current = openOrderRef.current.filter((item) => item !== modal);
+      setModalState((prev) => ({
+        ...prev,
+        [modal]: false,
+        ...(modal === "feedback" && { feedbackPrefill: null }),
+      }));
+      restoreFocus(modal);
+      focusOriginsRef.current[modal] = [];
+    },
+    [restoreFocus],
+  );
 
   const closeAllModals = useCallback(() => {
     const generation = ++closeAllGenerationRef.current;
@@ -104,6 +112,7 @@ export const ModalProvider: React.FC<{ children: ReactNode }> = ({
       feedback: false,
       folderSelector: false,
       globalSearch: false,
+      vaultConsole: false,
       feedbackPrefill: null,
     }));
     requestAnimationFrame(() => {
@@ -137,7 +146,7 @@ export const ModalProvider: React.FC<{ children: ReactNode }> = ({
       isOpen,
       modalState.folderSelectorMode,
       openModal,
-    ]
+    ],
   );
 
   return (
